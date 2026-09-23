@@ -16,6 +16,7 @@ import numpy as np
 from analyzer import TikTokVideoAnalyzer
 from safe_zone import render_tiktok_overlay
 from converter import TikTokVideoConverter
+from theme_detector import VideoThemeDetector
 
 st.set_page_config(
     page_title="TikTok Scanner, Convertisseur & Publication",
@@ -430,7 +431,8 @@ with tab_batch:
         st.info(f"📂 **{len(uploaded_batch)} vidéo(s) chargée(s)** pour le traitement en rafale.")
 
         if batch_action == "convert":
-            # --- Pré-scan instantané pour détecter la conformité TikTok ---
+            # --- Pré-scan instantané pour détecter la conformité TikTok & les Thèmes ---
+            theme_det = VideoThemeDetector()
             inspected_files = []
             for file in uploaded_batch:
                 file.seek(0)
@@ -446,6 +448,9 @@ with tab_batch:
                 tot = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
                 dur = round(tot / fps, 1) if fps > 0 else 0
                 cap.release()
+
+                # Détection du thème (Fusée, Collision, Avion, Facecam, etc.)
+                theme_info = theme_det.detect_theme(temp_probe.name)
 
                 try:
                     os.remove(temp_probe.name)
@@ -474,6 +479,10 @@ with tab_batch:
                     "duration": dur,
                     "needs_fix": needs_fix,
                     "issue_label": issue_label,
+                    "theme_id": theme_info["theme_id"],
+                    "theme_label": theme_info["theme_label"],
+                    "slug": theme_info["slug"],
+                    "hashtags": theme_info["hashtags"],
                 })
 
             nb_compliant = sum(1 for it in inspected_files if not it["needs_fix"])
@@ -498,7 +507,7 @@ with tab_batch:
                 key="filter_mode_radio",
             )[0]
 
-            st.markdown("#### 📋 Diagnostic et état de chaque vidéo :")
+            st.markdown("#### 📋 Diagnostic & Thèmes détectés pour chaque vidéo :")
             selected_indices = []
             for i, it in enumerate(inspected_files):
                 if filter_mode == "auto_problematic":
@@ -520,22 +529,23 @@ with tab_batch:
                         disabled=is_disabled,
                     )
                 with col_c2:
+                    theme_badge = f"🏷️ **{it['theme_label']}**"
                     if it["needs_fix"]:
                         st.markdown(
-                            f"🛑 **{it['name']}** — `{it['issue_label']}` ({it['duration']}s) "
+                            f"🛑 **{it['name']}** ➔ {theme_badge} | `{it['issue_label']}` ({it['duration']}s) "
                             f"{'➔ **Sélectionnée pour correction**' if checked else '*(Non cochée)*'}"
                         )
                     else:
                         st.markdown(
-                            f"✅ **{it['name']}** — `{it['issue_label']}` ({it['duration']}s) "
-                            f"{'➔ *Préservée sans modification (déjà parfaite)*' if not checked else '➔ **Forcée pour ré-encodage**'}"
+                            f"✅ **{it['name']}** ➔ {theme_badge} | `{it['issue_label']}` ({it['duration']}s) "
+                            f"{'➔ *Préservée sans modification*' if not checked else '➔ **Forcée pour ré-encodage**'}"
                         )
 
                 if checked:
                     selected_indices.append(i)
 
             st.markdown("---")
-            st.markdown("### 🎛️ Paramètres pour les vidéos à corriger")
+            st.markdown("### 🎛️ Paramètres & Nommage thématique")
             col_b1, col_b2 = st.columns(2)
             with col_b1:
                 batch_style = st.selectbox(
@@ -548,6 +558,18 @@ with tab_batch:
                     format_func=lambda x: x[1],
                     key="batch_style_select",
                 )[0]
+                batch_naming = st.selectbox(
+                    "🏷️ Comment nommer les fichiers corrigés selon leur thème ?",
+                    options=[
+                        ("thematic", "🏷️ Nom thématique numéroté (ex: Fusee_Espace_01_corrige.mp4, Collision_Impact_01_corrige.mp4)"),
+                        ("prefixed", "🔀 Thème + Nom d'origine (ex: Fusee_Espace_IMG1234_corrige.mp4)"),
+                        ("original", "📁 Nom d'origine conservé (ex: IMG1234_corrige.mp4)"),
+                    ],
+                    format_func=lambda x: x[1],
+                    index=0,
+                    key="batch_naming_select",
+                )[0]
+
             with col_b2:
                 batch_trim = st.slider(
                     "Couper les premières secondes de chaque vidéo :",
@@ -567,13 +589,14 @@ with tab_batch:
                     progress_bar = st.progress(0, text="Démarrage du traitement par lot...")
                     converter = TikTokVideoConverter()
                     converted_files = []
+                    theme_counters = {}
 
                     total_to_process = len(selected_indices)
                     for step_idx, orig_idx in enumerate(selected_indices):
                         item = inspected_files[orig_idx]
                         file = item["file"]
                         pct = int((step_idx / total_to_process) * 100)
-                        progress_bar.progress(pct, text=f"Correction de la vidéo {step_idx + 1}/{total_to_process} : {file.name}...")
+                        progress_bar.progress(pct, text=f"Correction de la vidéo {step_idx + 1}/{total_to_process} : {file.name} [{item['theme_label']}]...")
 
                         file.seek(0)
                         temp_in = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
@@ -590,12 +613,21 @@ with tab_batch:
                         )
 
                         base_name, _ = os.path.splitext(file.name)
-                        fixed_name = f"{base_name}_corrige.mp4"
+                        slug = item["slug"]
+                        theme_counters[slug] = theme_counters.get(slug, 0) + 1
+                        num = theme_counters[slug]
+
+                        if batch_naming == "thematic":
+                            fixed_name = f"{slug}_{num:02d}_corrige.mp4"
+                        elif batch_naming == "prefixed":
+                            fixed_name = f"{slug}_{base_name}_corrige.mp4"
+                        else:
+                            fixed_name = f"{base_name}_corrige.mp4"
 
                         if res["success"] and os.path.exists(temp_out):
                             with open(temp_out, "rb") as f_out:
                                 data = f_out.read()
-                            converted_files.append((fixed_name, data, res["file_size_mb"]))
+                            converted_files.append((fixed_name, data, res["file_size_mb"], item["theme_label"]))
                             try:
                                 os.remove(temp_out)
                             except Exception:
@@ -616,7 +648,7 @@ with tab_batch:
                         # Archive 1 : Uniquement les vidéos corrigées
                         zip_corrige = io.BytesIO()
                         with zipfile.ZipFile(zip_corrige, "w", zipfile.ZIP_DEFLATED) as zf:
-                            for filename, data, _ in converted_files:
+                            for filename, data, _, _ in converted_files:
                                 zf.writestr(filename, data)
                         zip_corrige.seek(0)
 
@@ -624,7 +656,7 @@ with tab_batch:
                         zip_complet = io.BytesIO()
                         with zipfile.ZipFile(zip_complet, "w", zipfile.ZIP_DEFLATED) as zf_all:
                             # 1. Ajouter les corrigées
-                            for filename, data, _ in converted_files:
+                            for filename, data, _, _ in converted_files:
                                 zf_all.writestr(filename, data)
                             # 2. Ajouter les intactes non modifiées
                             for i, it in enumerate(inspected_files):
@@ -654,10 +686,10 @@ with tab_batch:
 
                         st.markdown("---")
                         st.markdown("#### 👁️ Téléchargement individuel des vidéos corrigées :")
-                        for filename, data, size_mb in converted_files:
+                        for filename, data, size_mb, theme_label in converted_files:
                             col_f1, col_f2 = st.columns([3, 1])
                             with col_f1:
-                                st.write(f"🎬 **{filename}** ({size_mb} Mo - 1080x1920)")
+                                st.write(f"🎬 **{filename}** ➔ {theme_label} ({size_mb} Mo - 1080x1920)")
                             with col_f2:
                                 st.download_button(
                                     label="⬇️ Télécharger",
