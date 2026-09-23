@@ -215,14 +215,18 @@ with tab_scan:
                             trim_start_sec=trim_sec,
                         )
                         if res["success"]:
+                            raw_name = uploaded_file.name if uploaded_file else "video"
+                            base_name, _ = os.path.splitext(raw_name)
+                            download_filename = f"{base_name}_corrige.mp4"
+
                             st.session_state["ready_video_path"] = out_fixed
-                            st.session_state["ready_video_name"] = "video_optimisee_tiktok.mp4"
+                            st.session_state["ready_video_name"] = download_filename
                             st.success(f"Vidéo convertie avec succès en {res['resolution']} ({res['file_size_mb']} Mo) !")
                             with open(out_fixed, "rb") as f:
                                 st.download_button(
-                                    label="⬇️ Télécharger la vidéo corrigée",
+                                    label=f"⬇️ Télécharger « {download_filename} »",
                                     data=f.read(),
-                                    file_name="video_optimisee_tiktok.mp4",
+                                    file_name=download_filename,
                                     mime="video/mp4",
                                     key="dl_btn_fixed",
                                 )
@@ -363,8 +367,12 @@ with tab_convert:
                 )
 
             if res["success"]:
+                raw_name = conv_upload.name if conv_upload else "video"
+                base_name, _ = os.path.splitext(raw_name)
+                download_filename = f"{base_name}_corrige.mp4"
+
                 st.session_state["ready_video_path"] = output_converted
-                st.session_state["ready_video_name"] = "video_tiktok_1080x1920.mp4"
+                st.session_state["ready_video_name"] = download_filename
                 st.success(f"🎉 Vidéo convertie en {res['resolution']} ! Taille : {res['file_size_mb']} Mo")
 
                 col_res_v, col_res_d = st.columns([1, 1])
@@ -375,9 +383,9 @@ with tab_convert:
                     st.write("La vidéo est désormais parfaitement calibrée pour les smartphones et l'algorithme.")
                     with open(output_converted, "rb") as f:
                         st.download_button(
-                            label="⬇️ Télécharger la vidéo convertie (.mp4)",
+                            label=f"⬇️ Télécharger « {download_filename} »",
                             data=f.read(),
-                            file_name="video_tiktok_1080x1920.mp4",
+                            file_name=download_filename,
                             mime="video/mp4",
                             key="btn_download_final",
                         )
@@ -421,9 +429,9 @@ with tab_publish:
             with col_btn_f2:
                 with open(ready_path, "rb") as f:
                     st.download_button(
-                        label="⬇️ Enregistrer la vidéo (.mp4)",
+                        label=f"⬇️ Enregistrer « {ready_name} »",
                         data=f.read(),
-                        file_name=ready_name or "video_tiktok.mp4",
+                        file_name=ready_name or "video_corrige.mp4",
                         mime="video/mp4",
                         key="btn_pub_download",
                     )
