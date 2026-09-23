@@ -5,6 +5,8 @@ au format 9:16 optimal (1080x1920) et d'ouvrir l'application TikTok pour publier
 """
 
 import os
+import io
+import zipfile
 import subprocess
 import tempfile
 import streamlit as st
@@ -95,9 +97,10 @@ st.sidebar.markdown(
 )
 
 # Onglets principaux
-tab_scan, tab_convert, tab_publish = st.tabs([
+tab_scan, tab_convert, tab_batch, tab_publish = st.tabs([
     "📊 Scanner & Audit TikTok",
     "🪄 Convertisseur 9:16",
+    "⚡ Mode Rafale (Multi-Vidéos)",
     "🚀 Envoyer & Publier",
 ])
 
@@ -395,7 +398,190 @@ with tab_convert:
 
 
 # ==========================================
-# ONGLET 3 : ENVOYER & PUBLIER SUR TIKTOK
+# ONGLET 3 : MODE RAFALE (TRAITEMENT PAR LOT)
+# ==========================================
+with tab_batch:
+    st.title("⚡ Mode Rafale : Traitez jusqu'à 10+ vidéos à la fois")
+    st.write(
+        "Déposez plusieurs vidéos en même temps (par exemple vos clips d'avions, fusées, collisions ou facecam). "
+        "Vous pouvez toutes les convertir en 9:16 ou les auditer d'un coup, puis **télécharger le pack complet dans un fichier ZIP** !"
+    )
+
+    batch_action = st.radio(
+        "Action à exécuter sur le lot de vidéos :",
+        options=[
+            ("convert", "🪄 Conversion 9:16 en Rafale (+ Téléchargement du pack ZIP)"),
+            ("audit", "📊 Audit & Scan de Rétention en Rafale (Tableau comparatif)"),
+        ],
+        format_func=lambda x: x[1],
+        index=0,
+        horizontal=True,
+    )[0]
+
+    uploaded_batch = st.file_uploader(
+        "Sélectionnez vos vidéos (vous pouvez en choisir jusqu'à 10 ou plus) :",
+        type=["mp4", "mov"],
+        accept_multiple_files=True,
+        key="uploader_batch",
+        help="Sur Mac ou iPad, sélectionnez plusieurs fichiers en même temps.",
+    )
+
+    if uploaded_batch:
+        st.info(f"📂 **{len(uploaded_batch)} vidéo(s) sélectionnée(s)** pour le traitement en rafale.")
+
+        if batch_action == "convert":
+            st.markdown("### 🎛️ Paramètres de conversion pour le lot")
+            col_b1, col_b2 = st.columns(2)
+            with col_b1:
+                batch_style = st.selectbox(
+                    "Style de cadrage 9:16 pour tout le lot :",
+                    options=[
+                        ("blur_bg", "🌟 Fond flou dynamique (Idéal pour vidéos d'avions/fusées/espace 16:9)"),
+                        ("crop", "✂️ Recadrage centré plein écran 9:16 (Zoom sans bande)"),
+                        ("fit", "⬛ Ajustement avec bandes noires classiques"),
+                    ],
+                    format_func=lambda x: x[1],
+                    key="batch_style_select",
+                )[0]
+            with col_b2:
+                batch_trim = st.slider(
+                    "Couper les premières secondes de chaque vidéo :",
+                    min_value=0.0,
+                    max_value=3.0,
+                    value=0.0,
+                    step=0.1,
+                    format="%.1f secondes",
+                    key="batch_trim_slider",
+                )
+
+            if st.button(f"⚡ Lancer la conversion en rafale de {len(uploaded_batch)} vidéo(s)", key="btn_start_batch_convert"):
+                progress_bar = st.progress(0, text="Démarrage du traitement par lot...")
+                converter = TikTokVideoConverter()
+                converted_files = []
+
+                total = len(uploaded_batch)
+                for idx, file in enumerate(uploaded_batch):
+                    pct = int(((idx) / total) * 100)
+                    progress_bar.progress(pct, text=f"Conversion de la vidéo {idx + 1}/{total} : {file.name}...")
+
+                    temp_in = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
+                    temp_in.write(file.read())
+                    temp_in.close()
+
+                    temp_out = tempfile.mktemp(suffix="_batch_fixed.mp4")
+
+                    res = converter.convert_to_tiktok_format(
+                        input_path=temp_in.name,
+                        output_path=temp_out,
+                        mode=batch_style,
+                        trim_start_sec=batch_trim,
+                    )
+
+                    base_name, _ = os.path.splitext(file.name)
+                    fixed_name = f"{base_name}_corrige.mp4"
+
+                    if res["success"] and os.path.exists(temp_out):
+                        with open(temp_out, "rb") as f_out:
+                            data = f_out.read()
+                        converted_files.append((fixed_name, data, res["file_size_mb"]))
+                        try:
+                            os.remove(temp_out)
+                        except Exception:
+                            pass
+                    else:
+                        st.error(f"❌ Échec pour {file.name} : {res.get('error', 'Erreur inconnue')}")
+
+                    try:
+                        os.remove(temp_in.name)
+                    except Exception:
+                        pass
+
+                progress_bar.progress(100, text="Traitement terminé !")
+
+                if converted_files:
+                    st.success(f"🎉 **{len(converted_files)} vidéo(s) convertie(s) avec succès en format 1080x1920 HD !**")
+
+                    # Création de l'archive ZIP
+                    zip_buffer = io.BytesIO()
+                    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+                        for filename, data, _ in converted_files:
+                            zip_file.writestr(filename, data)
+
+                    zip_buffer.seek(0)
+
+                    # Bouton de téléchargement du pack ZIP complet
+                    st.download_button(
+                        label=f"📦 Télécharger tout le pack ({len(converted_files)} vidéos dans un fichier .ZIP)",
+                        data=zip_buffer.getvalue(),
+                        file_name="pack_tiktok_videos_corrigees.zip",
+                        mime="application/zip",
+                        key="btn_download_batch_zip",
+                    )
+
+                    st.markdown("---")
+                    st.markdown("#### 👁️ Téléchargement individuel :")
+                    for filename, data, size_mb in converted_files:
+                        col_f1, col_f2 = st.columns([3, 1])
+                        with col_f1:
+                            st.write(f"🎬 **{filename}** ({size_mb} Mo - 1080x1920)")
+                        with col_f2:
+                            st.download_button(
+                                label="⬇️ Télécharger",
+                                data=data,
+                                file_name=filename,
+                                mime="video/mp4",
+                                key=f"dl_indiv_{filename}",
+                            )
+
+        elif batch_action == "audit":
+            if st.button(f"🔍 Lancer l'audit de {len(uploaded_batch)} vidéo(s)", key="btn_start_batch_audit"):
+                progress_bar = st.progress(0, text="Analyse du lot en cours...")
+                results = []
+
+                total = len(uploaded_batch)
+                for idx, file in enumerate(uploaded_batch):
+                    pct = int(((idx) / total) * 100)
+                    progress_bar.progress(pct, text=f"Scan de la vidéo {idx + 1}/{total} : {file.name}...")
+
+                    temp_in = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
+                    temp_in.write(file.read())
+                    temp_in.close()
+
+                    analyzer = TikTokVideoAnalyzer(temp_in.name)
+                    report = analyzer.analyze_all(content_style=selected_style)
+
+                    try:
+                        os.remove(temp_in.name)
+                    except Exception:
+                        pass
+
+                    if "error" not in report:
+                        score = report["overall_score"]
+                        status = "🔥 Prête" if score >= 85 else "⚠️ À corriger" if score >= 65 else "🛑 Risque 800 vues"
+                        format_str = "✅ 9:16 HD" if report["technical"]["is_9_16"] else f"❌ {report['technical']['resolution_label']}"
+                        silence_str = "⚠️ Blanc au début" if report["audio"].get("initial_silence") else "✅ Son immédiat"
+                        hook_str = "🔥 Dynamique" if report["hook"]["status"] == "dynamique" else "⚠️ Trop statique" if report["hook"]["status"] == "tres_statique" else "Moyen"
+
+                        results.append({
+                            "Vidéo": file.name,
+                            "Score TikTok": f"{score} / 100",
+                            "Statut": status,
+                            "Format": format_str,
+                            "Hook (0-3s)": hook_str,
+                            "Audio": silence_str,
+                            "Durée": f"{report['technical']['duration']}s",
+                        })
+
+                progress_bar.progress(100, text="Audit terminé !")
+
+                if results:
+                    st.success(f"📊 Audit terminé pour {len(results)} vidéo(s) !")
+                    st.dataframe(results, use_container_width=True)
+                    st.info("💡 Pour les vidéos à corriger, basculez sur l'option **'Conversion 9:16 en Rafale'** ci-dessus pour les convertir d'un coup !")
+
+
+# ==========================================
+# ONGLET 4 : ENVOYER & PUBLIER SUR TIKTOK
 # ==========================================
 with tab_publish:
     st.title("🚀 Envoyer & Publier sur TikTok")
