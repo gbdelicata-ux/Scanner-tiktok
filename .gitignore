@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+temp_*
+*_converted.mp4
+*_fixed.mp4
+test_*.mp4
+.streamlit/credentials.toml
