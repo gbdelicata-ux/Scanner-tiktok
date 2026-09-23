@@ -427,14 +427,119 @@ with tab_batch:
     )
 
     if uploaded_batch:
-        st.info(f"📂 **{len(uploaded_batch)} vidéo(s) sélectionnée(s)** pour le traitement en rafale.")
+        st.info(f"📂 **{len(uploaded_batch)} vidéo(s) chargée(s)** pour le traitement en rafale.")
 
         if batch_action == "convert":
-            st.markdown("### 🎛️ Paramètres de conversion pour le lot")
+            # --- Pré-scan instantané pour détecter la conformité TikTok ---
+            inspected_files = []
+            for file in uploaded_batch:
+                file.seek(0)
+                temp_probe = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
+                temp_probe.write(file.read())
+                temp_probe.close()
+                file.seek(0)
+
+                cap = cv2.VideoCapture(temp_probe.name)
+                w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                fps = round(cap.get(cv2.CAP_PROP_FPS) or 30.0, 1)
+                tot = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+                dur = round(tot / fps, 1) if fps > 0 else 0
+                cap.release()
+
+                try:
+                    os.remove(temp_probe.name)
+                except Exception:
+                    pass
+
+                ratio = round(w / h, 3) if h > 0 else 0
+                is_compliant_9_16 = (0.54 <= ratio <= 0.58) and (h >= 1080) and (w >= 720)
+
+                if not (0.54 <= ratio <= 0.58):
+                    issue_label = f"Format {w}x{h} (Ratio {ratio} non 9:16)"
+                    needs_fix = True
+                elif h < 1080:
+                    issue_label = f"Basse résolution ({w}x{h} < 1080p)"
+                    needs_fix = True
+                else:
+                    issue_label = f"Conforme 9:16 HD ({w}x{h})"
+                    needs_fix = False
+
+                inspected_files.append({
+                    "file": file,
+                    "name": file.name,
+                    "w": w,
+                    "h": h,
+                    "ratio": ratio,
+                    "duration": dur,
+                    "needs_fix": needs_fix,
+                    "issue_label": issue_label,
+                })
+
+            nb_compliant = sum(1 for it in inspected_files if not it["needs_fix"])
+            nb_problematic = sum(1 for it in inspected_files if it["needs_fix"])
+
+            # Tableau de bord du tri automatique
+            col_m1, col_m2, col_m3 = st.columns(3)
+            col_m1.metric("Total Vidéos", len(inspected_files))
+            col_m2.metric("✅ Déjà Conformes TikTok", nb_compliant)
+            col_m3.metric("⚠️ À Corriger", nb_problematic)
+
+            st.markdown("### 🎯 Choix du mode de sélection")
+            filter_mode = st.radio(
+                "Quelles vidéos souhaitez-vous modifier ?",
+                options=[
+                    ("auto_problematic", f"🪄 Modifier UNIQUEMENT les vidéos non conformes ({nb_problematic} vidéo(s) ciblée(s))"),
+                    ("custom", "✍️ Sélection personnalisée (cocher manuellement)"),
+                    ("all", f"🔄 Tout modifier (forcer la conversion des {len(inspected_files)} vidéos)"),
+                ],
+                format_func=lambda x: x[1],
+                index=0,
+                key="filter_mode_radio",
+            )[0]
+
+            st.markdown("#### 📋 Diagnostic et état de chaque vidéo :")
+            selected_indices = []
+            for i, it in enumerate(inspected_files):
+                if filter_mode == "auto_problematic":
+                    default_checked = it["needs_fix"]
+                    is_disabled = True
+                elif filter_mode == "all":
+                    default_checked = True
+                    is_disabled = True
+                else:  # custom
+                    default_checked = it["needs_fix"]
+                    is_disabled = False
+
+                col_c1, col_c2 = st.columns([1, 14])
+                with col_c1:
+                    checked = st.checkbox(
+                        "",
+                        value=default_checked,
+                        key=f"chk_vid_{i}_{it['name']}",
+                        disabled=is_disabled,
+                    )
+                with col_c2:
+                    if it["needs_fix"]:
+                        st.markdown(
+                            f"🛑 **{it['name']}** — `{it['issue_label']}` ({it['duration']}s) "
+                            f"{'➔ **Sélectionnée pour correction**' if checked else '*(Non cochée)*'}"
+                        )
+                    else:
+                        st.markdown(
+                            f"✅ **{it['name']}** — `{it['issue_label']}` ({it['duration']}s) "
+                            f"{'➔ *Préservée sans modification (déjà parfaite)*' if not checked else '➔ **Forcée pour ré-encodage**'}"
+                        )
+
+                if checked:
+                    selected_indices.append(i)
+
+            st.markdown("---")
+            st.markdown("### 🎛️ Paramètres pour les vidéos à corriger")
             col_b1, col_b2 = st.columns(2)
             with col_b1:
                 batch_style = st.selectbox(
-                    "Style de cadrage 9:16 pour tout le lot :",
+                    "Style de cadrage 9:16 appliqué :",
                     options=[
                         ("blur_bg", "🌟 Fond flou dynamique (Idéal pour vidéos d'avions/fusées/espace 16:9)"),
                         ("crop", "✂️ Recadrage centré plein écran 9:16 (Zoom sans bande)"),
@@ -454,84 +559,113 @@ with tab_batch:
                     key="batch_trim_slider",
                 )
 
-            if st.button(f"⚡ Lancer la conversion en rafale de {len(uploaded_batch)} vidéo(s)", key="btn_start_batch_convert"):
-                progress_bar = st.progress(0, text="Démarrage du traitement par lot...")
-                converter = TikTokVideoConverter()
-                converted_files = []
+            if len(selected_indices) == 0:
+                st.warning("ℹ️ Aucune vidéo n'est sélectionnée pour la conversion (toutes vos vidéos sont déjà conformes ou décochées).")
+            else:
+                btn_convert_label = f"⚡ Lancer la correction des {len(selected_indices)} vidéo(s) sélectionnée(s)"
+                if st.button(btn_convert_label, key="btn_start_batch_convert"):
+                    progress_bar = st.progress(0, text="Démarrage du traitement par lot...")
+                    converter = TikTokVideoConverter()
+                    converted_files = []
 
-                total = len(uploaded_batch)
-                for idx, file in enumerate(uploaded_batch):
-                    pct = int(((idx) / total) * 100)
-                    progress_bar.progress(pct, text=f"Conversion de la vidéo {idx + 1}/{total} : {file.name}...")
+                    total_to_process = len(selected_indices)
+                    for step_idx, orig_idx in enumerate(selected_indices):
+                        item = inspected_files[orig_idx]
+                        file = item["file"]
+                        pct = int((step_idx / total_to_process) * 100)
+                        progress_bar.progress(pct, text=f"Correction de la vidéo {step_idx + 1}/{total_to_process} : {file.name}...")
 
-                    temp_in = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
-                    temp_in.write(file.read())
-                    temp_in.close()
+                        file.seek(0)
+                        temp_in = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
+                        temp_in.write(file.read())
+                        temp_in.close()
 
-                    temp_out = tempfile.mktemp(suffix="_batch_fixed.mp4")
+                        temp_out = tempfile.mktemp(suffix="_batch_fixed.mp4")
 
-                    res = converter.convert_to_tiktok_format(
-                        input_path=temp_in.name,
-                        output_path=temp_out,
-                        mode=batch_style,
-                        trim_start_sec=batch_trim,
-                    )
+                        res = converter.convert_to_tiktok_format(
+                            input_path=temp_in.name,
+                            output_path=temp_out,
+                            mode=batch_style,
+                            trim_start_sec=batch_trim,
+                        )
 
-                    base_name, _ = os.path.splitext(file.name)
-                    fixed_name = f"{base_name}_corrige.mp4"
+                        base_name, _ = os.path.splitext(file.name)
+                        fixed_name = f"{base_name}_corrige.mp4"
 
-                    if res["success"] and os.path.exists(temp_out):
-                        with open(temp_out, "rb") as f_out:
-                            data = f_out.read()
-                        converted_files.append((fixed_name, data, res["file_size_mb"]))
+                        if res["success"] and os.path.exists(temp_out):
+                            with open(temp_out, "rb") as f_out:
+                                data = f_out.read()
+                            converted_files.append((fixed_name, data, res["file_size_mb"]))
+                            try:
+                                os.remove(temp_out)
+                            except Exception:
+                                pass
+                        else:
+                            st.error(f"❌ Échec pour {file.name} : {res.get('error', 'Erreur inconnue')}")
+
                         try:
-                            os.remove(temp_out)
+                            os.remove(temp_in.name)
                         except Exception:
                             pass
-                    else:
-                        st.error(f"❌ Échec pour {file.name} : {res.get('error', 'Erreur inconnue')}")
 
-                    try:
-                        os.remove(temp_in.name)
-                    except Exception:
-                        pass
+                    progress_bar.progress(100, text="Traitement terminé !")
 
-                progress_bar.progress(100, text="Traitement terminé !")
+                    if converted_files:
+                        st.success(f"🎉 **{len(converted_files)} vidéo(s) corrigée(s) avec succès en format 1080x1920 HD !**")
 
-                if converted_files:
-                    st.success(f"🎉 **{len(converted_files)} vidéo(s) convertie(s) avec succès en format 1080x1920 HD !**")
+                        # Archive 1 : Uniquement les vidéos corrigées
+                        zip_corrige = io.BytesIO()
+                        with zipfile.ZipFile(zip_corrige, "w", zipfile.ZIP_DEFLATED) as zf:
+                            for filename, data, _ in converted_files:
+                                zf.writestr(filename, data)
+                        zip_corrige.seek(0)
 
-                    # Création de l'archive ZIP
-                    zip_buffer = io.BytesIO()
-                    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
-                        for filename, data, _ in converted_files:
-                            zip_file.writestr(filename, data)
+                        # Archive 2 : Pack complet (vidéos corrigées + vidéos déjà conformes d'origine)
+                        zip_complet = io.BytesIO()
+                        with zipfile.ZipFile(zip_complet, "w", zipfile.ZIP_DEFLATED) as zf_all:
+                            # 1. Ajouter les corrigées
+                            for filename, data, _ in converted_files:
+                                zf_all.writestr(filename, data)
+                            # 2. Ajouter les intactes non modifiées
+                            for i, it in enumerate(inspected_files):
+                                if i not in selected_indices:
+                                    it["file"].seek(0)
+                                    zf_all.writestr(it["name"], it["file"].read())
+                        zip_complet.seek(0)
 
-                    zip_buffer.seek(0)
-
-                    # Bouton de téléchargement du pack ZIP complet
-                    st.download_button(
-                        label=f"📦 Télécharger tout le pack ({len(converted_files)} vidéos dans un fichier .ZIP)",
-                        data=zip_buffer.getvalue(),
-                        file_name="pack_tiktok_videos_corrigees.zip",
-                        mime="application/zip",
-                        key="btn_download_batch_zip",
-                    )
-
-                    st.markdown("---")
-                    st.markdown("#### 👁️ Téléchargement individuel :")
-                    for filename, data, size_mb in converted_files:
-                        col_f1, col_f2 = st.columns([3, 1])
-                        with col_f1:
-                            st.write(f"🎬 **{filename}** ({size_mb} Mo - 1080x1920)")
-                        with col_f2:
+                        st.markdown("### 📦 Téléchargements groupés")
+                        col_dl1, col_dl2 = st.columns(2)
+                        with col_dl1:
                             st.download_button(
-                                label="⬇️ Télécharger",
-                                data=data,
-                                file_name=filename,
-                                mime="video/mp4",
-                                key=f"dl_indiv_{filename}",
+                                label=f"📦 Télécharger uniquement les {len(converted_files)} vidéos corrigées (.ZIP)",
+                                data=zip_corrige.getvalue(),
+                                file_name="videos_corrigees_tiktok.zip",
+                                mime="application/zip",
+                                key="btn_download_batch_zip_fixed",
                             )
+                        with col_dl2:
+                            st.download_button(
+                                label=f"🎁 Télécharger la collection complète de {len(inspected_files)} vidéos (.ZIP)",
+                                data=zip_complet.getvalue(),
+                                file_name="collection_complete_tiktok.zip",
+                                mime="application/zip",
+                                key="btn_download_batch_zip_all",
+                            )
+
+                        st.markdown("---")
+                        st.markdown("#### 👁️ Téléchargement individuel des vidéos corrigées :")
+                        for filename, data, size_mb in converted_files:
+                            col_f1, col_f2 = st.columns([3, 1])
+                            with col_f1:
+                                st.write(f"🎬 **{filename}** ({size_mb} Mo - 1080x1920)")
+                            with col_f2:
+                                st.download_button(
+                                    label="⬇️ Télécharger",
+                                    data=data,
+                                    file_name=filename,
+                                    mime="video/mp4",
+                                    key=f"dl_indiv_{filename}",
+                                )
 
         elif batch_action == "audit":
             if st.button(f"🔍 Lancer l'audit de {len(uploaded_batch)} vidéo(s)", key="btn_start_batch_audit"):
