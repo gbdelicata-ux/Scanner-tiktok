@@ -76,13 +76,20 @@ def get_gdrive_config() -> Tuple[Optional[str], Optional[Any]]:
                 pass
 
     # 4. Vérification d'un dossier de synchronisation locale Google Drive (Mac)
-    local_drive_paths = [
+    import glob
+    candidates = [
+        "/Users/gilbertdelicata/Library/CloudStorage/GoogleDrive-gb.delicata@gmail.com/Mon Drive/AIVIDEO",
         "/Users/gilbertdelicata/Library/CloudStorage/GoogleDrive-gb.delicata@gmail.com/Mon Drive/AIvidéo",
         "/Users/gilbertdelicata/Library/CloudStorage/GoogleDrive-gb.delicata@gmail.com/Mon Drive/AIvideo",
-        os.path.expanduser("~/Google Drive/AIvidéo"),
-        os.path.expanduser("~/Google Drive/AIvideo"),
     ]
-    for p in local_drive_paths:
+    # Recherche dynamique tous comptes Google Drive installés
+    search_pattern = os.path.expanduser("~/Library/CloudStorage/GoogleDrive-*/Mon Drive/*")
+    for matched_path in glob.glob(search_pattern):
+        folder_clean = os.path.basename(matched_path).lower().replace("é", "e").replace("è", "e")
+        if folder_clean == "aivideo":
+            candidates.insert(0, matched_path)
+
+    for p in candidates:
         if os.path.exists(p) and os.path.isdir(p) and os.access(p, os.W_OK):
             return "local_sync", p
 
