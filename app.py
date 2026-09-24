@@ -108,6 +108,18 @@ st.sidebar.link_button(
     use_container_width=True,
 )
 
+# En-tête principal avec bouton Google Drive toujours visible en haut
+col_head1, col_head2 = st.columns([2, 1])
+with col_head1:
+    st.markdown("## 📱 TikTok Video Studio & Scanner")
+with col_head2:
+    st.write("")
+    st.link_button(
+        "☁️ Mon Dossier AIvidéo (Google Drive)",
+        GOOGLE_DRIVE_FOLDER_URL,
+        use_container_width=True,
+    )
+
 # Onglets principaux
 tab_scan, tab_convert, tab_batch, tab_publish = st.tabs([
     "📊 Scanner & Audit TikTok",
@@ -330,10 +342,18 @@ with tab_scan:
 # ==========================================
 with tab_convert:
     st.title("🪄 Convertisseur de Vidéos TikTok 9:16 (1080x1920)")
-    st.write(
-        "Transformez n'importe quelle vidéo (horizontale 16:9, carrée ou basse résolution) "
-        "en format vertical immersif optimisé pour l'algorithme TikTok."
-    )
+    col_cv_t1, col_cv_t2 = st.columns([3, 2])
+    with col_cv_t1:
+        st.write(
+            "Transformez n'importe quelle vidéo (horizontale 16:9, carrée ou basse résolution) "
+            "en format vertical immersif optimisé pour l'algorithme TikTok."
+        )
+    with col_cv_t2:
+        st.link_button(
+            "☁️ Ouvrir mon dossier AIvidéo (Drive)",
+            GOOGLE_DRIVE_FOLDER_URL,
+            use_container_width=True,
+        )
 
     conv_upload = st.file_uploader(
         "Sélectionnez une vidéo à convertir :",
@@ -429,10 +449,18 @@ with tab_convert:
 # ==========================================
 with tab_batch:
     st.title("⚡ Mode Rafale : Traitez jusqu'à 10+ vidéos à la fois")
-    st.write(
-        "Déposez plusieurs vidéos en même temps (par exemple vos clips d'avions, fusées, collisions ou facecam). "
-        "Vous pouvez toutes les convertir en 9:16 ou les auditer d'un coup, puis **télécharger le pack complet dans un fichier ZIP** !"
-    )
+    col_bt_t1, col_bt_t2 = st.columns([3, 2])
+    with col_bt_t1:
+        st.write(
+            "Déposez plusieurs vidéos en même temps (par exemple vos clips d'avions, fusées, collisions ou facecam). "
+            "Vous pouvez toutes les convertir en 9:16 ou les auditer d'un coup, puis **télécharger le pack complet dans un fichier ZIP** !"
+        )
+    with col_bt_t2:
+        st.link_button(
+            "☁️ Ouvrir mon dossier AIvidéo (Drive)",
+            GOOGLE_DRIVE_FOLDER_URL,
+            use_container_width=True,
+        )
 
     batch_action = st.radio(
         "Action à exécuter sur le lot de vidéos :",
