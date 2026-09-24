@@ -97,6 +97,17 @@ st.sidebar.markdown(
     """
 )
 
+# Dossier Google Drive de destination
+GOOGLE_DRIVE_FOLDER_URL = "https://drive.google.com/drive/folders/1yO7GS0GJgDI0Waq1wdIo0tLtKFxOWjYD"
+
+st.sidebar.markdown("---")
+st.sidebar.markdown("### ☁️ Google Drive")
+st.sidebar.link_button(
+    "📂 Accéder au dossier AIvidéo",
+    GOOGLE_DRIVE_FOLDER_URL,
+    use_container_width=True,
+)
+
 # Onglets principaux
 tab_scan, tab_convert, tab_batch, tab_publish = st.tabs([
     "📊 Scanner & Audit TikTok",
@@ -226,13 +237,22 @@ with tab_scan:
                             st.session_state["ready_video_path"] = out_fixed
                             st.session_state["ready_video_name"] = download_filename
                             st.success(f"Vidéo convertie avec succès en {res['resolution']} ({res['file_size_mb']} Mo) !")
-                            with open(out_fixed, "rb") as f:
-                                st.download_button(
-                                    label=f"⬇️ Télécharger « {download_filename} »",
-                                    data=f.read(),
-                                    file_name=download_filename,
-                                    mime="video/mp4",
-                                    key="dl_btn_fixed",
+                            col_dl_fix1, col_dl_fix2 = st.columns(2)
+                            with col_dl_fix1:
+                                with open(out_fixed, "rb") as f:
+                                    st.download_button(
+                                        label=f"⬇️ Télécharger « {download_filename} »",
+                                        data=f.read(),
+                                        file_name=download_filename,
+                                        mime="video/mp4",
+                                        key="dl_btn_fixed",
+                                        use_container_width=True,
+                                    )
+                            with col_dl_fix2:
+                                st.link_button(
+                                    "☁️ Déposer dans AIvidéo (Google Drive)",
+                                    GOOGLE_DRIVE_FOLDER_URL,
+                                    use_container_width=True,
                                 )
                         else:
                             st.error(f"Erreur lors de la conversion : {res.get('error')}")
@@ -392,7 +412,13 @@ with tab_convert:
                             file_name=download_filename,
                             mime="video/mp4",
                             key="btn_download_final",
+                            use_container_width=True,
                         )
+                    st.link_button(
+                        "☁️ Déposer dans AIvidéo (Google Drive)",
+                        GOOGLE_DRIVE_FOLDER_URL,
+                        use_container_width=True,
+                    )
                     st.info("👉 Rendez-vous dans l'onglet **'🚀 Envoyer & Publier'** pour lancer TikTok !")
             else:
                 st.error(f"Erreur de conversion : {res.get('error')}")
@@ -684,6 +710,12 @@ with tab_batch:
                                 key="btn_download_batch_zip_all",
                             )
 
+                        st.link_button(
+                            "☁️ Ouvrir le dossier AIvidéo sur Google Drive (pour y glisser vos vidéos ou le pack ZIP)",
+                            GOOGLE_DRIVE_FOLDER_URL,
+                            use_container_width=True,
+                        )
+
                         st.markdown("---")
                         st.markdown("#### 👁️ Téléchargement individuel des vidéos corrigées :")
                         for filename, data, size_mb, theme_label in converted_files:
@@ -786,7 +818,14 @@ with tab_publish:
                         file_name=ready_name or "video_corrige.mp4",
                         mime="video/mp4",
                         key="btn_pub_download",
+                        use_container_width=True,
                     )
+
+            st.link_button(
+                "☁️ Déposer cette vidéo dans mon dossier AIvidéo (Google Drive)",
+                GOOGLE_DRIVE_FOLDER_URL,
+                use_container_width=True,
+            )
         else:
             st.warning("⚠️ Aucune vidéo n'a encore été analysée ou convertie.")
             st.info("Chargez d'abord une vidéo dans l'onglet **Scanner** ou **Convertisseur**, ou testez avec les boutons ci-dessous.")
