@@ -111,6 +111,15 @@ st.sidebar.markdown("---")
 st.sidebar.markdown("### ☁️ Google Drive (AIvidéo)")
 if is_gdrive_ready:
     st.sidebar.success(f"🟢 **Connecté pour envoi direct**\n\n*{gdrive_desc}*")
+    if st.sidebar.button("🧪 Déposer un fichier test dans Drive", key="btn_quick_test_drive", use_container_width=True):
+        test_tmp = tempfile.mktemp(suffix=".mp4")
+        with open(test_tmp, "w") as f:
+            f.write("test_antigravity_video")
+        t_res = upload_video_to_gdrive(test_tmp, destination_filename="test_connexion_drive.mp4")
+        if t_res.get("success"):
+            st.sidebar.success("🎉 Fichier `test_connexion_drive.mp4` déposé avec succès dans votre dossier Google Drive AIVIDEO !")
+        else:
+            st.sidebar.error(f"Erreur : {t_res.get('error')}")
 else:
     st.sidebar.info("⚪ **Dépôt direct non configuré**\n\n(Lien manuel actif)")
 
@@ -336,6 +345,43 @@ with tab_scan:
                                 st.link_button("📂 Ouvrir le dossier AIvidéo sur Google Drive", GOOGLE_DRIVE_FOLDER_URL, use_container_width=True)
                         else:
                             st.error(f"Erreur lors de la conversion : {res.get('error')}")
+            else:
+                st.markdown(
+                    """
+                    <div style='background: rgba(37, 244, 238, 0.08); border: 1px solid #25f4ee; border-radius: 8px; padding: 12px; margin-bottom: 12px;'>
+                        <h4 style='color: #25f4ee; margin: 0 0 6px 0;'>✅ Vidéo déjà au format optimal 9:16 !</h4>
+                        <p style='margin: 0;'>Cette vidéo respecte les dimensions TikTok. Vous pouvez la déposer directement dans votre dossier Google Drive AIvidéo.</p>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+                col_ok_dl, col_ok_drive = st.columns(2)
+                raw_name = uploaded_file.name if uploaded_file else "video.mp4"
+                with col_ok_dl:
+                    with open(target_video_path, "rb") as f:
+                        st.download_button(
+                            label=f"⬇️ Enregistrer « {raw_name} »",
+                            data=f.read(),
+                            file_name=raw_name,
+                            mime="video/mp4",
+                            key="dl_btn_ok_scan",
+                            use_container_width=True,
+                        )
+                with col_ok_drive:
+                    if st.button("☁️ Déposer MAINTENANT dans Google Drive (AIvidéo)", key="btn_upload_scan_ok", use_container_width=True):
+                        with st.spinner("Téléversement vers Google Drive (AIvidéo)..."):
+                            up_res = upload_video_to_gdrive(target_video_path, destination_filename=raw_name)
+                            if up_res.get("success"):
+                                st.session_state["tab1_drive_url"] = up_res.get("web_link", GOOGLE_DRIVE_FOLDER_URL)
+                                st.success(f"🎉 Vidéo « {raw_name} » déposée avec succès dans votre dossier Google Drive AIVIDEO !")
+                            else:
+                                st.error(f"Erreur d'envoi : {up_res.get('error')}")
+
+                if st.session_state.get("tab1_drive_url"):
+                    st.link_button("📂 Voir la vidéo dans mon Google Drive", st.session_state["tab1_drive_url"], use_container_width=True)
+
+            st.session_state["ready_video_path"] = target_video_path
+            st.session_state["ready_video_name"] = uploaded_file.name if uploaded_file else "video.mp4"
 
             st.markdown("---")
 

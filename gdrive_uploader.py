@@ -195,35 +195,42 @@ def upload_video_to_gdrive(
         }
 
     final_name = destination_filename or os.path.basename(local_file_path)
-    method, config = get_gdrive_config()
+    # 1. Copie locale immédiate dans le dossier Mac AIVIDEO si présent
+    local_dir_candidates = [
+        "/Users/gilbertdelicata/Library/CloudStorage/GoogleDrive-gb.delicata@gmail.com/Mon Drive/AIVIDEO",
+        "/Users/gilbertdelicata/Library/CloudStorage/GoogleDrive-gb.delicata@gmail.com/Mon Drive/AIvidéo",
+        "/Users/gilbertdelicata/Library/CloudStorage/GoogleDrive-gb.delicata@gmail.com/Mon Drive/AIvideo",
+    ]
+    local_copied_path = None
+    for loc_p in local_dir_candidates:
+        if os.path.exists(loc_p) and os.path.isdir(loc_p):
+            try:
+                dest_f = os.path.join(loc_p, final_name)
+                shutil.copy2(local_file_path, dest_f)
+                local_copied_path = dest_f
+                break
+            except Exception as e:
+                logger.warning(f"Erreur copie locale Drive: {e}")
 
-    # CAS 1 : Dossier local synchronisé (Google Drive Desktop sur Mac)
-    if method == "local_sync":
-        try:
-            dest_dir = config
-            dest_file = os.path.join(dest_dir, final_name)
-            shutil.copy2(local_file_path, dest_file)
-            return {
-                "success": True,
-                "file_id": None,
-                "web_link": f"https://drive.google.com/drive/folders/{target_folder_id}",
-                "filename": final_name,
-                "method": "local_sync",
-                "message": f"Fichier synchronisé directement via le dossier Mac : {dest_file}",
-            }
-        except Exception as e:
-            logger.warning(f"Échec copie locale Drive: {e}, tentative via API...")
-
-    # CAS 2 : Upload direct via Google Drive API
+    # 2. Upload direct via Google Drive API (pour garantir la présence cloud et le lien web)
     try:
         from googleapiclient.http import MediaFileUpload
         from googleapiclient.errors import HttpError
 
         service = build_drive_service()
         if not service:
+            if local_copied_path:
+                return {
+                    "success": True,
+                    "file_id": None,
+                    "web_link": f"https://drive.google.com/drive/folders/{target_folder_id}",
+                    "filename": final_name,
+                    "method": "local_sync",
+                    "message": f"Fichier synchronisé directement via votre dossier Mac : {local_copied_path}",
+                }
             return {
                 "success": False,
-                "error": "Google Drive n'est pas encore configuré. Ajoutez vos clés d'accès.",
+                "error": "Google Drive n'est pas configuré. Connectez vos accès.",
                 "configured": False,
             }
 
