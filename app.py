@@ -965,10 +965,11 @@ with tab_batch:
                 col_c1, col_c2 = st.columns([1, 14])
                 with col_c1:
                     checked = st.checkbox(
-                        "",
+                        f"Sélectionner {it['name']}",
                         value=default_checked,
                         key=f"chk_vid_{i}_{it['name']}",
                         disabled=is_disabled,
+                        label_visibility="collapsed",
                     )
                 with col_c2:
                     theme_badge = f"🏷️ **{it['theme_label']}**"
