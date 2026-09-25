@@ -876,7 +876,9 @@ with tab_batch:
             inspected_files = []
             for file in uploaded_batch:
                 file.seek(0)
-                temp_probe = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
+                _, f_ext = os.path.splitext(file.name)
+                f_ext = f_ext.lower() if f_ext in [".mp4", ".mov", ".m4v"] else ".mp4"
+                temp_probe = tempfile.NamedTemporaryFile(delete=False, suffix=f_ext)
                 temp_probe.write(file.read())
                 temp_probe.close()
                 file.seek(0)
@@ -999,11 +1001,11 @@ with tab_batch:
                     key="batch_style_select",
                 )[0]
                 batch_naming = st.selectbox(
-                    "🏷️ Comment nommer les fichiers corrigés selon leur thème ?",
+                    "🏷️ Comment nommer les fichiers corrigés (lisibles iPad) ?",
                     options=[
-                        ("thematic", "🏷️ Nom thématique numéroté (ex: Fusee_Espace_01_corrige.mp4, Collision_Impact_01_corrige.mp4)"),
-                        ("prefixed", "🔀 Thème + Nom d'origine (ex: Fusee_Espace_IMG1234_corrige.mp4)"),
-                        ("original", "📁 Nom d'origine conservé (ex: IMG1234_corrige.mp4)"),
+                        ("original", "📱 Identifiant court (ex: 76662_FULL.mp4 - Recommandé)"),
+                        ("thematic", "🏷️ Nom thématique court (ex: Espace_01_FULL.mp4)"),
+                        ("prefixed", "🔀 Thème + Identifiant (ex: Espace_76662_FULL.mp4)"),
                     ],
                     format_func=lambda x: x[1],
                     index=0,
@@ -1045,7 +1047,9 @@ with tab_batch:
                         progress_bar.progress(pct, text=f"Correction de la vidéo {step_idx + 1}/{total_to_process} : {file.name} [{item['theme_label']}]...")
 
                         file.seek(0)
-                        temp_in = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
+                        _, f_ext = os.path.splitext(file.name)
+                        f_ext = f_ext.lower() if f_ext in [".mp4", ".mov", ".m4v"] else ".mp4"
+                        temp_in = tempfile.NamedTemporaryFile(delete=False, suffix=f_ext)
                         temp_in.write(file.read())
                         temp_in.close()
 
@@ -1059,16 +1063,17 @@ with tab_batch:
                         )
 
                         base_name, _ = os.path.splitext(file.name)
+                        tag = get_short_clean_name(base_name)
                         slug = item["slug"]
                         theme_counters[slug] = theme_counters.get(slug, 0) + 1
                         num = theme_counters[slug]
 
                         if batch_naming == "thematic":
-                            fixed_name = f"{slug}_{num:02d}_corrige.mp4"
+                            fixed_name = f"{slug}_{num:02d}_FULL.mp4"
                         elif batch_naming == "prefixed":
-                            fixed_name = f"{slug}_{base_name}_corrige.mp4"
+                            fixed_name = f"{slug}_{tag}_FULL.mp4"
                         else:
-                            fixed_name = f"{base_name}_corrige.mp4"
+                            fixed_name = f"{tag}_FULL.mp4"
 
                         if res["success"] and os.path.exists(temp_out):
                             with open(temp_out, "rb") as f_out:
@@ -1100,21 +1105,19 @@ with tab_batch:
                     progress_bar.progress(100, text="Traitement terminé !")
 
                     if converted_files:
-                        st.success(f"🎉 **{len(converted_files)} vidéo(s) corrigée(s) avec succès en format 1080x1920 HD !**")
-
                         # Archive 1 : Uniquement les vidéos corrigées
                         zip_corrige = io.BytesIO()
                         with zipfile.ZipFile(zip_corrige, "w", zipfile.ZIP_DEFLATED) as zf:
-                            for filename, data, _, _ in converted_files:
-                                zf.writestr(filename, data)
+                            for item_f in converted_files:
+                                zf.writestr(item_f[0], item_f[1])
                         zip_corrige.seek(0)
 
                         # Archive 2 : Pack complet (vidéos corrigées + vidéos déjà conformes d'origine)
                         zip_complet = io.BytesIO()
                         with zipfile.ZipFile(zip_complet, "w", zipfile.ZIP_DEFLATED) as zf_all:
                             # 1. Ajouter les corrigées
-                            for filename, data, _, _ in converted_files:
-                                zf_all.writestr(filename, data)
+                            for item_f in converted_files:
+                                zf_all.writestr(item_f[0], item_f[1])
                             # 2. Ajouter les intactes non modifiées
                             for i, it in enumerate(inspected_files):
                                 if i not in selected_indices:
@@ -1122,81 +1125,99 @@ with tab_batch:
                                     zf_all.writestr(it["name"], it["file"].read())
                         zip_complet.seek(0)
 
-                        st.markdown("### 📦 Téléchargements groupés")
-                        col_dl1, col_dl2 = st.columns(2)
-                        with col_dl1:
+                        st.session_state["tab3_converted_files"] = converted_files
+                        st.session_state["tab3_zip_corrige"] = zip_corrige.getvalue()
+                        st.session_state["tab3_zip_complet"] = zip_complet.getvalue()
+                        st.session_state["tab3_total_inspected"] = len(inspected_files)
+
+                # Affichage persistant des résultats de conversion
+                if st.session_state.get("tab3_converted_files"):
+                    converted_files = st.session_state["tab3_converted_files"]
+                    st.success(f"🎉 **{len(converted_files)} vidéo(s) corrigée(s) avec succès en format 1080x1920 HD !**")
+
+                    st.markdown("### 📦 Téléchargements groupés")
+                    col_dl1, col_dl2 = st.columns(2)
+                    with col_dl1:
+                        if st.session_state.get("tab3_zip_corrige"):
                             st.download_button(
                                 label=f"📦 Télécharger uniquement les {len(converted_files)} vidéos corrigées (.ZIP)",
-                                data=zip_corrige.getvalue(),
+                                data=st.session_state["tab3_zip_corrige"],
                                 file_name="videos_corrigees_tiktok.zip",
                                 mime="application/zip",
                                 key="btn_download_batch_zip_fixed",
                             )
-                        with col_dl2:
+                    with col_dl2:
+                        if st.session_state.get("tab3_zip_complet"):
+                            total_c = st.session_state.get("tab3_total_inspected", len(converted_files))
                             st.download_button(
-                                label=f"🎁 Télécharger la collection complète de {len(inspected_files)} vidéos (.ZIP)",
-                                data=zip_complet.getvalue(),
+                                label=f"🎁 Télécharger la collection complète de {total_c} vidéos (.ZIP)",
+                                data=st.session_state["tab3_zip_complet"],
                                 file_name="collection_complete_tiktok.zip",
                                 mime="application/zip",
                                 key="btn_download_batch_zip_all",
                             )
 
-                        if auto_drive_batch:
-                            successful_uploads = [f for f in converted_files if f[4] and f[4].get("success")]
-                            if successful_uploads:
-                                st.success(f"🎉 **{len(successful_uploads)}/{len(converted_files)} vidéo(s) déposée(s) automatiquement dans votre dossier Google Drive AIvidéo !**")
-                            elif any(f[4] and not f[4].get("success") for f in converted_files):
-                                err = next(f[4]["error"] for f in converted_files if f[4] and not f[4].get("success"))
-                                st.warning(f"⚠️ Note Google Drive : {err}")
-                        else:
-                            if st.button("☁️ Déposer TOUTES ces vidéos dans mon Google Drive (AIvidéo)", key="btn_batch_upload_all_drive", use_container_width=True):
-                                with st.spinner("Téléversement groupé dans votre Google Drive..."):
-                                    c_ok = 0
-                                    for item_entry in converted_files:
-                                        fn, d, s, t, _ = item_entry
-                                        tmp_batch_f = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
-                                        tmp_batch_f.write(d)
-                                        tmp_batch_f.close()
-                                        res_u = upload_video_to_gdrive(tmp_batch_f.name, destination_filename=fn)
-                                        if res_u.get("success"):
-                                            c_ok += 1
-                                        try:
-                                            os.remove(tmp_batch_f.name)
-                                        except Exception:
-                                            pass
-                                    st.success(f"🎉 **{c_ok}/{len(converted_files)} vidéo(s) déposée(s) avec succès dans votre dossier Google Drive AIvidéo !**")
+                    successful_uploads = [f for f in converted_files if len(f) > 4 and f[4] and f[4].get("success")]
+                    if successful_uploads:
+                        st.success(f"🎉 **{len(successful_uploads)}/{len(converted_files)} vidéo(s) déposée(s) automatiquement dans votre dossier Google Drive AIvidéo !**")
+                    elif any(len(f) > 4 and f[4] and not f[4].get("success") for f in converted_files):
+                        err = next(f[4]["error"] for f in converted_files if len(f) > 4 and f[4] and not f[4].get("success"))
+                        st.warning(f"⚠️ Note Google Drive : {err}")
+                    else:
+                        if st.button("☁️ Déposer TOUTES ces vidéos dans mon Google Drive (AIvidéo)", key="btn_batch_upload_all_drive", use_container_width=True):
+                            with st.spinner("Téléversement groupé dans votre Google Drive..."):
+                                c_ok = 0
+                                for item_entry in converted_files:
+                                    fn = item_entry[0]
+                                    d = item_entry[1]
+                                    tmp_batch_f = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
+                                    tmp_batch_f.write(d)
+                                    tmp_batch_f.close()
+                                    res_u = upload_video_to_gdrive(tmp_batch_f.name, destination_filename=fn)
+                                    if res_u.get("success"):
+                                        c_ok += 1
+                                    try:
+                                        os.remove(tmp_batch_f.name)
+                                    except Exception:
+                                        pass
+                                st.success(f"🎉 **{c_ok}/{len(converted_files)} vidéo(s) déposée(s) avec succès dans votre dossier Google Drive AIvidéo !**")
 
-                        st.link_button(
-                            "📂 Ouvrir mon dossier AIvidéo sur Google Drive",
-                            GOOGLE_DRIVE_FOLDER_URL,
-                            use_container_width=True,
-                        )
+                    st.link_button(
+                        "📂 Ouvrir mon dossier AIvidéo sur Google Drive",
+                        GOOGLE_DRIVE_FOLDER_URL,
+                        use_container_width=True,
+                    )
 
-                        st.markdown("---")
-                        st.markdown("#### 👁️ Téléchargement ou accès direct aux vidéos corrigées :")
-                        for item_entry in converted_files:
-                            filename, data, size_mb, theme_label, drive_info = item_entry
-                            col_f1, col_f2 = st.columns([3, 1])
-                            with col_f1:
-                                drive_badge = " | 🟢 **Déposé sur Google Drive**" if (drive_info and drive_info.get("success")) else ""
-                                st.write(f"🎬 **{filename}** ➔ {theme_label} ({size_mb} Mo - 1080x1920){drive_badge}")
-                            with col_f2:
-                                if drive_info and drive_info.get("web_link"):
-                                    st.link_button(
-                                        "📂 Voir sur Drive",
-                                        drive_info["web_link"],
-                                        use_container_width=True,
-                                        key=f"drive_btn_{filename}",
-                                    )
-                                else:
-                                    st.download_button(
-                                        label="⬇️ Télécharger",
-                                        data=data,
-                                        file_name=filename,
-                                        mime="video/mp4",
-                                        key=f"dl_indiv_{filename}",
-                                        use_container_width=True,
-                                    )
+                    st.markdown("---")
+                    st.markdown("#### 👁️ Téléchargement ou accès direct aux vidéos corrigées :")
+                    for item_entry in converted_files:
+                        filename = item_entry[0]
+                        data = item_entry[1]
+                        size_mb = item_entry[2]
+                        theme_label = item_entry[3]
+                        drive_info = item_entry[4] if len(item_entry) > 4 else None
+
+                        col_f1, col_f2 = st.columns([3, 1])
+                        with col_f1:
+                            drive_badge = " | 🟢 **Déposé sur Google Drive**" if (drive_info and drive_info.get("success")) else ""
+                            st.write(f"🎬 **{filename}** ➔ {theme_label} ({size_mb} Mo - 1080x1920){drive_badge}")
+                        with col_f2:
+                            if drive_info and drive_info.get("web_link"):
+                                st.link_button(
+                                    "📂 Voir sur Drive",
+                                    drive_info["web_link"],
+                                    use_container_width=True,
+                                    key=f"drive_btn_{filename}",
+                                )
+                            else:
+                                st.download_button(
+                                    label="⬇️ Télécharger",
+                                    data=data,
+                                    file_name=filename,
+                                    mime="video/mp4",
+                                    key=f"dl_indiv_{filename}",
+                                    use_container_width=True,
+                                )
 
         elif batch_action == "audit":
             if st.button(f"🔍 Lancer l'audit de {len(uploaded_batch)} vidéo(s)", key="btn_start_batch_audit"):
@@ -1208,7 +1229,10 @@ with tab_batch:
                     pct = int(((idx) / total) * 100)
                     progress_bar.progress(pct, text=f"Scan de la vidéo {idx + 1}/{total} : {file.name}...")
 
-                    temp_in = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
+                    file.seek(0)
+                    _, f_ext = os.path.splitext(file.name)
+                    f_ext = f_ext.lower() if f_ext in [".mp4", ".mov", ".m4v"] else ".mp4"
+                    temp_in = tempfile.NamedTemporaryFile(delete=False, suffix=f_ext)
                     temp_in.write(file.read())
                     temp_in.close()
 
@@ -1238,11 +1262,13 @@ with tab_batch:
                         })
 
                 progress_bar.progress(100, text="Audit terminé !")
+                st.session_state["tab3_audit_results"] = results
 
-                if results:
-                    st.success(f"📊 Audit terminé pour {len(results)} vidéo(s) !")
-                    st.dataframe(results, use_container_width=True)
-                    st.info("💡 Pour les vidéos à corriger, basculez sur l'option **'Conversion 9:16 en Rafale'** ci-dessus pour les convertir d'un coup !")
+            if st.session_state.get("tab3_audit_results"):
+                res_audit = st.session_state["tab3_audit_results"]
+                st.success(f"📊 Audit terminé pour {len(res_audit)} vidéo(s) !")
+                st.dataframe(res_audit, use_container_width=True)
+                st.info("💡 Pour les vidéos à corriger, basculez sur l'option **'Conversion 9:16 en Rafale'** ci-dessus pour les convertir d'un coup !")
 
 
 # ==========================================
