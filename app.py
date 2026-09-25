@@ -871,6 +871,13 @@ with tab_batch:
         st.info(f"📂 **{len(uploaded_batch)} vidéo(s) chargée(s)** pour le traitement en rafale.")
 
         if batch_action == "convert":
+            batch_filenames = [f.name for f in uploaded_batch]
+            if st.session_state.get("tab3_last_batch_names") != batch_filenames:
+                st.session_state["tab3_last_batch_names"] = batch_filenames
+                st.session_state.pop("tab3_converted_files", None)
+                st.session_state.pop("tab3_zip_corrige", None)
+                st.session_state.pop("tab3_zip_complet", None)
+
             # --- Pré-scan instantané pour détecter la conformité TikTok & les Thèmes ---
             theme_det = VideoThemeDetector()
             inspected_files = []
@@ -937,18 +944,15 @@ with tab_batch:
             col_m3.metric("⚠️ À Corriger", nb_problematic)
 
             st.markdown("### 🎯 Choix du mode de sélection")
-            # Choix par défaut intelligent : si aucune vidéo n'est non-conforme (toutes 9:16), on sélectionne "all" par défaut
-            default_filter_idx = 0 if nb_problematic > 0 else 2
-
             filter_mode = st.radio(
-                "Quelles vidéos souhaitez-vous modifier ?",
+                "Quelles vidéos souhaitez-vous traiter dans ce lot ?",
                 options=[
-                    ("auto_problematic", f"🪄 Modifier UNIQUEMENT les vidéos non conformes ({nb_problematic} vidéo(s) ciblée(s))"),
+                    ("all", f"🔄 Traiter TOUTES les vidéos du lot ({len(inspected_files)} vidéo(s) sélectionnée(s) - Recommandé)"),
+                    ("auto_problematic", f"🪄 Uniquement celles à recadrer ({nb_problematic} non-conforme(s))"),
                     ("custom", "✍️ Sélection personnalisée (cocher manuellement ci-dessous)"),
-                    ("all", f"🔄 Tout modifier (traiter et ré-encoder les {len(inspected_files)} vidéos du lot)"),
                 ],
                 format_func=lambda x: x[1],
-                index=default_filter_idx,
+                index=0,
                 key="filter_mode_radio",
             )[0]
 
@@ -960,14 +964,14 @@ with tab_batch:
                 elif filter_mode == "all":
                     default_checked = True
                 else:  # custom
-                    default_checked = it["needs_fix"]
+                    default_checked = True
 
                 col_c1, col_c2 = st.columns([1, 14])
                 with col_c1:
                     checked = st.checkbox(
                         f"Sélectionner {it['name']}",
                         value=default_checked,
-                        key=f"chk_vid_{i}_{it['name']}",
+                        key=f"chk_vid_{i}_{it['name']}_{filter_mode}",
                         disabled=False,
                         label_visibility="collapsed",
                     )
@@ -976,16 +980,19 @@ with tab_batch:
                     if it["needs_fix"]:
                         st.markdown(
                             f"🛑 **{it['name']}** ➔ {theme_badge} | `{it['issue_label']}` ({it['duration']}s) "
-                            f"{'➔ **Sélectionnée pour correction**' if checked else '*(Décochée)*'}"
+                            f"{'➔ **Sélectionnée pour recadrage 9:16 HD**' if checked else '*(Décochée)*'}"
                         )
                     else:
                         st.markdown(
                             f"✅ **{it['name']}** ➔ {theme_badge} | `{it['issue_label']}` ({it['duration']}s) "
-                            f"{'➔ **Sélectionnée pour ré-encodage HD**' if checked else '*(Préservée sans modification)*'}"
+                            f"{'➔ **Sélectionnée pour ré-encodage TikTok certifié + Audio propre**' if checked else '*(Décochée)*'}"
                         )
 
                 if checked:
                     selected_indices.append(i)
+
+            if selected_indices:
+                st.info(f"✨ **{len(selected_indices)} sur {len(inspected_files)} vidéo(s) sélectionnée(s)** pour le traitement.")
 
             st.markdown("---")
             st.markdown("### 🎛️ Paramètres & Nommage thématique")
@@ -1112,122 +1119,122 @@ with tab_batch:
                     except Exception:
                         pass
 
-                    progress_bar.progress(100, text="Traitement terminé !")
+                progress_bar.progress(100, text="Traitement terminé !")
 
-                    if converted_files:
-                        # Archive 1 : Uniquement les vidéos corrigées
-                        zip_corrige = io.BytesIO()
-                        with zipfile.ZipFile(zip_corrige, "w", zipfile.ZIP_DEFLATED) as zf:
-                            for item_f in converted_files:
-                                zf.writestr(item_f[0], item_f[1])
-                        zip_corrige.seek(0)
+                if converted_files:
+                    # Archive 1 : Uniquement les vidéos corrigées
+                    zip_corrige = io.BytesIO()
+                    with zipfile.ZipFile(zip_corrige, "w", zipfile.ZIP_DEFLATED) as zf:
+                        for item_f in converted_files:
+                            zf.writestr(item_f[0], item_f[1])
+                    zip_corrige.seek(0)
 
-                        # Archive 2 : Pack complet (vidéos corrigées + vidéos déjà conformes d'origine)
-                        zip_complet = io.BytesIO()
-                        with zipfile.ZipFile(zip_complet, "w", zipfile.ZIP_DEFLATED) as zf_all:
-                            # 1. Ajouter les corrigées
-                            for item_f in converted_files:
-                                zf_all.writestr(item_f[0], item_f[1])
-                            # 2. Ajouter les intactes non modifiées
-                            for i, it in enumerate(inspected_files):
-                                if i not in selected_indices:
-                                    it["file"].seek(0)
-                                    zf_all.writestr(it["name"], it["file"].read())
-                        zip_complet.seek(0)
+                    # Archive 2 : Pack complet (vidéos corrigées + vidéos déjà conformes d'origine)
+                    zip_complet = io.BytesIO()
+                    with zipfile.ZipFile(zip_complet, "w", zipfile.ZIP_DEFLATED) as zf_all:
+                        # 1. Ajouter les corrigées
+                        for item_f in converted_files:
+                            zf_all.writestr(item_f[0], item_f[1])
+                        # 2. Ajouter les intactes non modifiées
+                        for i, it in enumerate(inspected_files):
+                            if i not in selected_indices:
+                                it["file"].seek(0)
+                                zf_all.writestr(it["name"], it["file"].read())
+                    zip_complet.seek(0)
 
-                        st.session_state["tab3_converted_files"] = converted_files
-                        st.session_state["tab3_zip_corrige"] = zip_corrige.getvalue()
-                        st.session_state["tab3_zip_complet"] = zip_complet.getvalue()
-                        st.session_state["tab3_total_inspected"] = len(inspected_files)
+                    st.session_state["tab3_converted_files"] = converted_files
+                    st.session_state["tab3_zip_corrige"] = zip_corrige.getvalue()
+                    st.session_state["tab3_zip_complet"] = zip_complet.getvalue()
+                    st.session_state["tab3_total_inspected"] = len(inspected_files)
 
-                # Affichage persistant des résultats de conversion
-                if st.session_state.get("tab3_converted_files"):
-                    converted_files = st.session_state["tab3_converted_files"]
-                    st.success(f"🎉 **{len(converted_files)} vidéo(s) corrigée(s) avec succès en format 1080x1920 HD !**")
+            # Affichage persistant des résultats de conversion (reste affiché même après téléchargement)
+            if st.session_state.get("tab3_converted_files"):
+                converted_files = st.session_state["tab3_converted_files"]
+                st.success(f"🎉 **{len(converted_files)} vidéo(s) traitée(s) avec succès en format 1080x1920 HD !**")
 
-                    st.markdown("### 📦 Téléchargements groupés")
-                    col_dl1, col_dl2 = st.columns(2)
-                    with col_dl1:
-                        if st.session_state.get("tab3_zip_corrige"):
-                            st.download_button(
-                                label=f"📦 Télécharger uniquement les {len(converted_files)} vidéos corrigées (.ZIP)",
-                                data=st.session_state["tab3_zip_corrige"],
-                                file_name="videos_corrigees_tiktok.zip",
-                                mime="application/zip",
-                                key="btn_download_batch_zip_fixed",
+                st.markdown("### 📦 Téléchargements groupés")
+                col_dl1, col_dl2 = st.columns(2)
+                with col_dl1:
+                    if st.session_state.get("tab3_zip_corrige"):
+                        st.download_button(
+                            label=f"📦 Télécharger uniquement les {len(converted_files)} vidéos corrigées (.ZIP)",
+                            data=st.session_state["tab3_zip_corrige"],
+                            file_name="videos_corrigees_tiktok.zip",
+                            mime="application/zip",
+                            key="btn_download_batch_zip_fixed",
+                        )
+                with col_dl2:
+                    if st.session_state.get("tab3_zip_complet"):
+                        total_c = st.session_state.get("tab3_total_inspected", len(converted_files))
+                        st.download_button(
+                            label=f"🎁 Télécharger la collection complète de {total_c} vidéos (.ZIP)",
+                            data=st.session_state["tab3_zip_complet"],
+                            file_name="collection_complete_tiktok.zip",
+                            mime="application/zip",
+                            key="btn_download_batch_zip_all",
+                        )
+
+                successful_uploads = [f for f in converted_files if len(f) > 4 and f[4] and f[4].get("success")]
+                if successful_uploads:
+                    st.success(f"🎉 **{len(successful_uploads)}/{len(converted_files)} vidéo(s) déposée(s) automatiquement dans votre dossier Google Drive AIvidéo !**")
+                elif any(len(f) > 4 and f[4] and not f[4].get("success") for f in converted_files):
+                    err = next(f[4]["error"] for f in converted_files if len(f) > 4 and f[4] and not f[4].get("success"))
+                    st.warning(f"⚠️ Note Google Drive : {err}")
+                else:
+                    if st.button("☁️ Déposer TOUTES ces vidéos dans mon Google Drive (AIvidéo)", key="btn_batch_upload_all_drive", use_container_width=True):
+                        with st.spinner("Téléversement groupé dans votre Google Drive..."):
+                            c_ok = 0
+                            for item_entry in converted_files:
+                                fn = item_entry[0]
+                                d = item_entry[1]
+                                tmp_batch_f = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
+                                tmp_batch_f.write(d)
+                                tmp_batch_f.close()
+                                res_u = upload_video_to_gdrive(tmp_batch_f.name, destination_filename=fn)
+                                if res_u.get("success"):
+                                    c_ok += 1
+                                try:
+                                    os.remove(tmp_batch_f.name)
+                                except Exception:
+                                    pass
+                            st.success(f"🎉 **{c_ok}/{len(converted_files)} vidéo(s) déposée(s) avec succès dans votre dossier Google Drive AIvidéo !**")
+
+                st.link_button(
+                    "📂 Ouvrir mon dossier AIvidéo sur Google Drive",
+                    GOOGLE_DRIVE_FOLDER_URL,
+                    use_container_width=True,
+                )
+
+                st.markdown("---")
+                st.markdown("#### 👁️ Téléchargement ou accès direct aux vidéos corrigées :")
+                for item_entry in converted_files:
+                    filename = item_entry[0]
+                    data = item_entry[1]
+                    size_mb = item_entry[2]
+                    theme_label = item_entry[3]
+                    drive_info = item_entry[4] if len(item_entry) > 4 else None
+
+                    col_f1, col_f2 = st.columns([3, 1])
+                    with col_f1:
+                        drive_badge = " | 🟢 **Déposé sur Google Drive**" if (drive_info and drive_info.get("success")) else ""
+                        st.write(f"🎬 **{filename}** ➔ {theme_label} ({size_mb} Mo - 1080x1920){drive_badge}")
+                    with col_f2:
+                        if drive_info and drive_info.get("web_link"):
+                            st.link_button(
+                                "📂 Voir sur Drive",
+                                drive_info["web_link"],
+                                use_container_width=True,
+                                key=f"drive_btn_{filename}",
                             )
-                    with col_dl2:
-                        if st.session_state.get("tab3_zip_complet"):
-                            total_c = st.session_state.get("tab3_total_inspected", len(converted_files))
+                        else:
                             st.download_button(
-                                label=f"🎁 Télécharger la collection complète de {total_c} vidéos (.ZIP)",
-                                data=st.session_state["tab3_zip_complet"],
-                                file_name="collection_complete_tiktok.zip",
-                                mime="application/zip",
-                                key="btn_download_batch_zip_all",
+                                label="⬇️ Télécharger",
+                                data=data,
+                                file_name=filename,
+                                mime="video/mp4",
+                                key=f"dl_indiv_{filename}",
+                                use_container_width=True,
                             )
-
-                    successful_uploads = [f for f in converted_files if len(f) > 4 and f[4] and f[4].get("success")]
-                    if successful_uploads:
-                        st.success(f"🎉 **{len(successful_uploads)}/{len(converted_files)} vidéo(s) déposée(s) automatiquement dans votre dossier Google Drive AIvidéo !**")
-                    elif any(len(f) > 4 and f[4] and not f[4].get("success") for f in converted_files):
-                        err = next(f[4]["error"] for f in converted_files if len(f) > 4 and f[4] and not f[4].get("success"))
-                        st.warning(f"⚠️ Note Google Drive : {err}")
-                    else:
-                        if st.button("☁️ Déposer TOUTES ces vidéos dans mon Google Drive (AIvidéo)", key="btn_batch_upload_all_drive", use_container_width=True):
-                            with st.spinner("Téléversement groupé dans votre Google Drive..."):
-                                c_ok = 0
-                                for item_entry in converted_files:
-                                    fn = item_entry[0]
-                                    d = item_entry[1]
-                                    tmp_batch_f = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
-                                    tmp_batch_f.write(d)
-                                    tmp_batch_f.close()
-                                    res_u = upload_video_to_gdrive(tmp_batch_f.name, destination_filename=fn)
-                                    if res_u.get("success"):
-                                        c_ok += 1
-                                    try:
-                                        os.remove(tmp_batch_f.name)
-                                    except Exception:
-                                        pass
-                                st.success(f"🎉 **{c_ok}/{len(converted_files)} vidéo(s) déposée(s) avec succès dans votre dossier Google Drive AIvidéo !**")
-
-                    st.link_button(
-                        "📂 Ouvrir mon dossier AIvidéo sur Google Drive",
-                        GOOGLE_DRIVE_FOLDER_URL,
-                        use_container_width=True,
-                    )
-
-                    st.markdown("---")
-                    st.markdown("#### 👁️ Téléchargement ou accès direct aux vidéos corrigées :")
-                    for item_entry in converted_files:
-                        filename = item_entry[0]
-                        data = item_entry[1]
-                        size_mb = item_entry[2]
-                        theme_label = item_entry[3]
-                        drive_info = item_entry[4] if len(item_entry) > 4 else None
-
-                        col_f1, col_f2 = st.columns([3, 1])
-                        with col_f1:
-                            drive_badge = " | 🟢 **Déposé sur Google Drive**" if (drive_info and drive_info.get("success")) else ""
-                            st.write(f"🎬 **{filename}** ➔ {theme_label} ({size_mb} Mo - 1080x1920){drive_badge}")
-                        with col_f2:
-                            if drive_info and drive_info.get("web_link"):
-                                st.link_button(
-                                    "📂 Voir sur Drive",
-                                    drive_info["web_link"],
-                                    use_container_width=True,
-                                    key=f"drive_btn_{filename}",
-                                )
-                            else:
-                                st.download_button(
-                                    label="⬇️ Télécharger",
-                                    data=data,
-                                    file_name=filename,
-                                    mime="video/mp4",
-                                    key=f"dl_indiv_{filename}",
-                                    use_container_width=True,
-                                )
 
         elif batch_action == "audit":
             if st.button(f"🔍 Lancer l'audit de {len(uploaded_batch)} vidéo(s)", key="btn_start_batch_audit"):

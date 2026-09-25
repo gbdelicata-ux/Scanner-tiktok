@@ -9,6 +9,7 @@ test_*.mp4
 .streamlit/credentials.toml
 .streamlit/secrets.toml
 service_account.json
+*credentials.json
 credentials.json
 token.json
 client_secrets.json
