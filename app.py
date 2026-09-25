@@ -1386,7 +1386,10 @@ with tab_magic:
     with col_m2:
         st.markdown("#### 🚀 Lancer le Dossier Magique")
         watch_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "A_CONVERTIR_TIKTOK")
-        os.makedirs(watch_path, exist_ok=True)
+        try:
+            os.makedirs(watch_path, exist_ok=True)
+        except Exception:
+            pass
         st.code(f"Dossier surveillé :\n{watch_path}", language="bash")
 
         import platform

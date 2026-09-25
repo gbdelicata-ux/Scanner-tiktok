@@ -29,13 +29,16 @@ DEFAULT_WATCH_DIR = os.path.expanduser("~/Movies/A_CONVERTIR_TIKTOK")
 LOCAL_WATCH_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "A_CONVERTIR_TIKTOK")
 LOG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "magic_folder.log")
 
+handlers = [logging.StreamHandler(sys.stdout)]
+try:
+    handlers.append(logging.FileHandler(LOG_FILE, encoding="utf-8"))
+except Exception:
+    pass
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[
-        logging.FileHandler(LOG_FILE, encoding="utf-8"),
-        logging.StreamHandler(sys.stdout),
-    ],
+    handlers=handlers,
 )
 logger = logging.getLogger("MagicFolder")
 
