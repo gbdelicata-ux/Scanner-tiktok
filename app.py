@@ -1192,7 +1192,6 @@ with tab_batch:
                                 "📂 Voir sur Drive",
                                 drive_info["web_link"],
                                 use_container_width=True,
-                                key=f"drive_btn_{filename}",
                             )
                         else:
                             st.download_button(
