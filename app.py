@@ -861,10 +861,10 @@ with tab_batch:
 
     uploaded_batch = st.file_uploader(
         "Sélectionnez vos vidéos (vous pouvez en choisir jusqu'à 10 ou plus) :",
-        type=["mp4", "mov"],
+        type=["mp4", "mov", "m4v", "MP4", "MOV", "M4V"],
         accept_multiple_files=True,
         key="uploader_batch",
-        help="Sur Mac ou iPad, sélectionnez plusieurs fichiers en même temps.",
+        help="Sur Mac : dans la fenêtre Finder, maintenez la touche Commande (⌘) ou Shift pour sélectionner plusieurs fichiers, ou glissez-les directement ici.",
     )
 
     if uploaded_batch:
@@ -943,35 +943,35 @@ with tab_batch:
             col_m2.metric("✅ Déjà Conformes TikTok", nb_compliant)
             col_m3.metric("⚠️ À Corriger", nb_problematic)
 
-            st.markdown("### 🎯 Choix du mode de sélection")
-            filter_mode = st.radio(
-                "Quelles vidéos souhaitez-vous traiter dans ce lot ?",
-                options=[
-                    ("all", f"🔄 Traiter TOUTES les vidéos du lot ({len(inspected_files)} vidéo(s) sélectionnée(s) - Recommandé)"),
-                    ("auto_problematic", f"🪄 Uniquement celles à recadrer ({nb_problematic} non-conforme(s))"),
-                    ("custom", "✍️ Sélection personnalisée (cocher manuellement ci-dessous)"),
-                ],
-                format_func=lambda x: x[1],
-                index=0,
-                key="filter_mode_radio",
-            )[0]
+            # Gestion de l'état de sélection (Toutes cochées par défaut)
+            batch_files_token = "_".join([f"{it['name']}_{it['w']}x{it['h']}" for it in inspected_files])
+            if st.session_state.get("last_batch_token") != batch_files_token:
+                st.session_state["last_batch_token"] = batch_files_token
+                for idx_i in range(len(inspected_files)):
+                    st.session_state[f"batch_sel_{idx_i}"] = True
 
-            st.markdown("#### 📋 Diagnostic & Thèmes détectés pour chaque vidéo :")
+            st.markdown("### 📋 Vidéos du lot (Toutes sélectionnées par défaut) :")
+
+            col_sel_a, col_sel_b = st.columns(2)
+            with col_sel_a:
+                if st.button(f"🔄 Tout sélectionner ({len(inspected_files)})", key="btn_sel_all_vids", use_container_width=True):
+                    for idx_i in range(len(inspected_files)):
+                        st.session_state[f"batch_sel_{idx_i}"] = True
+                    st.rerun()
+            with col_sel_b:
+                if nb_problematic > 0 and st.button(f"⚠️ Uniquement celles à recadrer ({nb_problematic})", key="btn_sel_prob_vids", use_container_width=True):
+                    for idx_i, it_prob in enumerate(inspected_files):
+                        st.session_state[f"batch_sel_{idx_i}"] = it_prob["needs_fix"]
+                    st.rerun()
+
             selected_indices = []
             for i, it in enumerate(inspected_files):
-                if filter_mode == "auto_problematic":
-                    default_checked = it["needs_fix"]
-                elif filter_mode == "all":
-                    default_checked = True
-                else:  # custom
-                    default_checked = True
-
                 col_c1, col_c2 = st.columns([1, 14])
                 with col_c1:
                     checked = st.checkbox(
                         f"Sélectionner {it['name']}",
-                        value=default_checked,
-                        key=f"chk_vid_{i}_{it['name']}_{filter_mode}",
+                        value=st.session_state.get(f"batch_sel_{i}", True),
+                        key=f"batch_sel_{i}",
                         disabled=False,
                         label_visibility="collapsed",
                     )
@@ -980,12 +980,12 @@ with tab_batch:
                     if it["needs_fix"]:
                         st.markdown(
                             f"🛑 **{it['name']}** ➔ {theme_badge} | `{it['issue_label']}` ({it['duration']}s) "
-                            f"{'➔ **Sélectionnée pour recadrage 9:16 HD**' if checked else '*(Décochée)*'}"
+                            f"{'➔ **Cochée pour recadrage 9:16 HD**' if checked else '*(Décochée)*'}"
                         )
                     else:
                         st.markdown(
                             f"✅ **{it['name']}** ➔ {theme_badge} | `{it['issue_label']}` ({it['duration']}s) "
-                            f"{'➔ **Sélectionnée pour ré-encodage TikTok certifié + Audio propre**' if checked else '*(Décochée)*'}"
+                            f"{'➔ **Cochée pour ré-encodage TikTok certifié + Audio propre**' if checked else '*(Décochée)*'}"
                         )
 
                 if checked:
