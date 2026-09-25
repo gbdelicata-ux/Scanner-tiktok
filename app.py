@@ -707,30 +707,62 @@ with tab_convert:
                 st.session_state["tab2_ab_res"] = ab_res
                 st.session_state["tab2_ab_dir"] = ab_dir
 
+                # Téléversement automatique des 2 variantes dans Google Drive si activé
+                if auto_drive_tab2:
+                    with st.spinner("☁️ Dépôt des variantes A et B dans votre dossier Google Drive (AIvidéo)..."):
+                        va_path = ab_res.get("variant_a", {}).get("output_path")
+                        vb_path = ab_res.get("variant_b", {}).get("output_path")
+                        if va_path and os.path.exists(va_path):
+                            up_a = upload_video_to_gdrive(va_path, destination_filename=os.path.basename(va_path))
+                            if up_a.get("success"):
+                                st.session_state["tab2_ab_va_drive"] = up_a.get("web_link", GOOGLE_DRIVE_FOLDER_URL)
+                        if vb_path and os.path.exists(vb_path):
+                            up_b = upload_video_to_gdrive(vb_path, destination_filename=os.path.basename(vb_path))
+                            if up_b.get("success"):
+                                st.session_state["tab2_ab_vb_drive"] = up_b.get("web_link", GOOGLE_DRIVE_FOLDER_URL)
+                        st.session_state["tab2_ab_drive_success"] = True
+
         if st.session_state.get("tab2_ab_res"):
             ab_dict = st.session_state["tab2_ab_res"]
             st.success("🎉 **Pack A/B Testing généré avec succès !**")
+            if st.session_state.get("tab2_ab_drive_success"):
+                st.success("☁️ **Les 2 variantes A et B ont été déposées directement dans votre dossier Google Drive AIvidéo !**")
+
             col_ab1, col_ab2 = st.columns(2)
             with col_ab1:
                 st.markdown("#### 🅰️ Variante A (Express 14s)")
+                st.caption("Coupe courte pour un taux de complétion maximal (100% de rétention TikTok).")
                 va = ab_dict.get("variant_a", {})
                 if va.get("success"):
                     st.video(va["output_path"])
                     with open(va["output_path"], "rb") as f_a:
                         st.download_button("⬇️ Télécharger Variante A", f_a.read(), file_name=os.path.basename(va["output_path"]), mime="video/mp4", key="dl_va", use_container_width=True)
-                    if st.button("☁️ Déposer Variante A sur Drive", key="btn_drv_va", use_container_width=True):
-                        upload_video_to_gdrive(va["output_path"], destination_filename=os.path.basename(va["output_path"]))
-                        st.success("Variante A envoyée sur Drive !")
+                    if st.session_state.get("tab2_ab_va_drive"):
+                        st.link_button("📂 Voir Variante A sur Drive", st.session_state["tab2_ab_va_drive"], use_container_width=True)
+                    else:
+                        if st.button("☁️ Déposer Variante A sur Drive", key="btn_drv_va", use_container_width=True):
+                            up_m_a = upload_video_to_gdrive(va["output_path"], destination_filename=os.path.basename(va["output_path"]))
+                            if up_m_a.get("success"):
+                                st.session_state["tab2_ab_va_drive"] = up_m_a.get("web_link")
+                                st.success("Variante A envoyée sur Drive !")
+                                st.rerun()
             with col_ab2:
                 st.markdown("#### 🅱️ Variante B (Action 15s)")
+                st.caption("Extrait centré sur le pic d'action visuelle avec accroche alternative.")
                 vb = ab_dict.get("variant_b", {})
                 if vb.get("success"):
                     st.video(vb["output_path"])
                     with open(vb["output_path"], "rb") as f_b:
                         st.download_button("⬇️ Télécharger Variante B", f_b.read(), file_name=os.path.basename(vb["output_path"]), mime="video/mp4", key="dl_vb", use_container_width=True)
-                    if st.button("☁️ Déposer Variante B sur Drive", key="btn_drv_vb", use_container_width=True):
-                        upload_video_to_gdrive(vb["output_path"], destination_filename=os.path.basename(vb["output_path"]))
-                        st.success("Variante B envoyée sur Drive !")
+                    if st.session_state.get("tab2_ab_vb_drive"):
+                        st.link_button("📂 Voir Variante B sur Drive", st.session_state["tab2_ab_vb_drive"], use_container_width=True)
+                    else:
+                        if st.button("☁️ Déposer Variante B sur Drive", key="btn_drv_vb", use_container_width=True):
+                            up_m_b = upload_video_to_gdrive(vb["output_path"], destination_filename=os.path.basename(vb["output_path"]))
+                            if up_m_b.get("success"):
+                                st.session_state["tab2_ab_vb_drive"] = up_m_b.get("web_link")
+                                st.success("Variante B envoyée sur Drive !")
+                                st.rerun()
 
         if st.session_state.get("tab2_output_path") and os.path.exists(st.session_state["tab2_output_path"]):
             output_converted = st.session_state["tab2_output_path"]

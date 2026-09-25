@@ -1,8 +1,11 @@
 """
 Module 'Dossier Magique' (Hot Folder 100% Zéro Clic) pour Mac.
 Surveille en continu un dossier local. Dès qu'une vidéo y est déposée :
-1. Analyse et conversion automatique en 9:16 HD (fond flou dynamique + coupe silence).
-2. Dépôt immédiat dans le dossier Google Drive cible ('AIvidéo').
+1. Analyse et génère automatiquement le PACK A/B TESTING TIKTOK :
+   - Variante A (14s Express - Complétion maximale + Hook 0-2s)
+   - Variante B (15s Action Peak - Hook Cyber)
+   - Version Complète 9:16 HD
+2. Dépôt immédiat des alternatives dans le dossier Google Drive cible ('AIvidéo').
 3. Déplacement du fichier source dans le sous-dossier 'traitees/'.
 4. Notification visuelle et sonore native macOS sur le bureau de Gilbert.
 """
@@ -59,80 +62,135 @@ def is_file_ready(file_path: str, wait_seconds: float = 1.5) -> bool:
 
 
 def process_single_video(video_path: str, output_dir: str) -> Dict[str, Any]:
-    """Traite automatiquement une vidéo déposée."""
+    """Traite automatiquement une vidéo déposée en générant le Pack A/B Testing."""
     filename = os.path.basename(video_path)
     base_name, _ = os.path.splitext(filename)
-    fixed_name = f"{base_name}_tiktok_hd.mp4"
-    output_path = os.path.join(output_dir, fixed_name)
 
-    print("\n" + "=" * 60)
+    print("\n" + "=" * 65)
     print(f"🎬 NOUVELLE VIDÉO DÉTECTÉE : {filename}")
-    print("=" * 60)
+    print("=" * 65)
     logger.info(f"Début du traitement de : {filename}")
 
-    # 1. Analyse rapide (silence et ratio)
-    print("⚙️ [1/3] Analyse du format et du silence d'introduction...")
+    # 1. Analyse préliminaire
+    print("⚙️ [1/3] Analyse du format, de la durée et du son...")
+    duration = 30.0
+    has_silence = False
+    is_9_16 = False
     try:
         analyzer = TikTokVideoAnalyzer(video_path)
         report = analyzer.analyze_all()
         has_silence = report.get("audio", {}).get("initial_silence", False)
         is_9_16 = report.get("technical", {}).get("is_9_16", False)
+        duration = float(report.get("technical", {}).get("duration", 30.0))
     except Exception as e:
-        logger.warning(f"Analyse préliminaire impossible : {e}, conversion standard appliquée.")
-        has_silence = False
-        is_9_16 = False
+        logger.warning(f"Analyse préliminaire : {e}")
 
     mode = "blur_bg" if not is_9_16 else "crop"
     trim_start = 0.4 if has_silence else 0.0
 
-    print(f"🪄 [1/3] Conversion 1080x1920 HD (Mode: {mode}, Coupe silence: {trim_start}s)...")
+    print(f"⏱️ Durée détectée : {duration}s | Ratio : {'9:16' if is_9_16 else 'Non-9:16 (fond flou actif)'}")
+    print("\n🧪 [2/3] Génération automatique du PACK A/B TESTING TIKTOK :")
+
     converter = TikTokVideoConverter()
-    res = converter.convert_to_tiktok_format(
+    generated_videos = []
+
+    # ----------------------------------------------------
+    # A. VARIANTE A : Express 14s (Taux de complétion maximal)
+    # ----------------------------------------------------
+    name_a = f"{base_name}_VARIANTE_A_express14s.mp4"
+    path_a = os.path.join(output_dir, name_a)
+    print(f"   🅰️ Variante A (14s Express - Hook Jaune/Noir)...")
+    dur_a = 14.0 if duration > 14.0 else None
+    res_a = converter.convert_to_tiktok_format(
         input_path=video_path,
-        output_path=output_path,
+        output_path=path_a,
+        mode=mode,
+        trim_start_sec=trim_start,
+        duration_sec=dur_a,
+        hook_text="🚀 Regardez bien à la 4e seconde...",
+        hook_style="yellow_impact",
+        hook_duration=2.2,
+    )
+    if res_a.get("success"):
+        print(f"      ✅ Variante A prête ({res_a.get('file_size_mb')} Mo)")
+        generated_videos.append(("🅰️ Variante A (Express 14s)", path_a, name_a))
+    else:
+        print(f"      ⚠️ Variante A : {res_a.get('error')}")
+
+    # ----------------------------------------------------
+    # B. VARIANTE B : Action Peak 15s (Milieu / Moment fort)
+    # ----------------------------------------------------
+    name_b = f"{base_name}_VARIANTE_B_action15s.mp4"
+    path_b = os.path.join(output_dir, name_b)
+    print(f"   🅱️ Variante B (15s Action Peak - Hook Cyber)...")
+    start_b = max(0.0, (duration / 2.0) - 7.0) if duration > 16.0 else 0.0
+    dur_b = 15.0 if duration > 15.0 else None
+    res_b = converter.convert_to_tiktok_format(
+        input_path=video_path,
+        output_path=path_b,
+        mode=mode,
+        trim_start_sec=start_b,
+        duration_sec=dur_b,
+        hook_text="😱 Ce que personne ne vous a dit :",
+        hook_style="cyber_cyan",
+        hook_duration=2.2,
+    )
+    if res_b.get("success"):
+        print(f"      ✅ Variante B prête ({res_b.get('file_size_mb')} Mo)")
+        generated_videos.append(("🅱️ Variante B (Action 15s)", path_b, name_b))
+    else:
+        print(f"      ⚠️ Variante B : {res_b.get('error')}")
+
+    # ----------------------------------------------------
+    # C. VERSION COMPLÈTE (Intégrale sans découpe)
+    # ----------------------------------------------------
+    name_c = f"{base_name}_COMPLET_9x16.mp4"
+    path_c = os.path.join(output_dir, name_c)
+    print(f"   🎬 Version Complète 9:16...")
+    res_c = converter.convert_to_tiktok_format(
+        input_path=video_path,
+        output_path=path_c,
         mode=mode,
         trim_start_sec=trim_start,
     )
+    if res_c.get("success"):
+        print(f"      ✅ Version Complète prête ({res_c.get('file_size_mb')} Mo)")
+        generated_videos.append(("🎬 Version Complète", path_c, name_c))
 
-    if not res.get("success"):
-        logger.error(f"❌ Échec de la conversion de {filename} : {res.get('error')}")
-        send_macos_notification("Erreur TikTok Studio", f"Échec sur {filename} : {res.get('error')}", sound="Basso")
-        print(f"❌ Échec de conversion : {res.get('error')}")
-        return {"success": False, "error": res.get("error")}
-
-    print(f"✅ [1/3] Vidéo convertie avec succès ({res.get('file_size_mb')} Mo) !")
-
-    # 2. Dépôt Google Drive AIvidéo
-    drive_ready, drive_desc = is_gdrive_configured()
-    drive_res = None
+    # ----------------------------------------------------
+    # 3. Dépôt de toutes les variantes dans Google Drive
+    # ----------------------------------------------------
+    drive_ready, _ = is_gdrive_configured()
+    uploaded_count = 0
     if drive_ready:
-        print(f"☁️ [2/3] Téléversement direct dans Google Drive (AIvidéo)...")
-        logger.info(f"Dépôt de {fixed_name} dans Google Drive (AIvidéo)...")
-        drive_res = upload_video_to_gdrive(output_path, destination_filename=fixed_name)
-        if drive_res.get("success"):
-            print(f"🎉 [3/3] SUCCÈS ! Vidéo disponible dans votre dossier Google Drive AIvidéo !")
-            logger.info(f"Vidéo {fixed_name} envoyée avec succès sur Google Drive !")
+        print(f"\n☁️ [3/3] Téléversement des {len(generated_videos)} alternatives sur Google Drive (AIvidéo)...")
+        for label, f_path, f_name in generated_videos:
+            print(f"   🚀 Dépôt de {f_name}...")
+            up_res = upload_video_to_gdrive(f_path, destination_filename=f_name)
+            if up_res.get("success"):
+                uploaded_count += 1
+                print(f"      ✅ {label} déposée avec succès !")
+            else:
+                print(f"      ⚠️ Erreur {label} : {up_res.get('error')}")
+
+        if uploaded_count > 0:
             send_macos_notification(
-                "🎉 Vidéo prête sur iPad & Drive !",
-                f"{fixed_name} est disponible dans votre dossier AIvidéo.",
+                "🎉 Pack A/B prêt sur iPad & Drive !",
+                f"{uploaded_count} versions (Variante A et B) sont prêtes dans AIvidéo.",
                 sound="Hero",
             )
-        else:
-            print(f"⚠️ [2/3] Erreur Google Drive : {drive_res.get('error')}")
-            logger.warning(f"Avertissement Google Drive: {drive_res.get('error')}")
-            send_macos_notification("TikTok Studio", f"Convertie en local mais erreur Drive : {drive_res.get('error')}")
+            print(f"\n🎉 {uploaded_count}/{len(generated_videos)} vidéos déposées avec succès dans votre dossier Google Drive AIvidéo !")
+            print("👉 Rendez-vous sur votre iPad pour publier les deux et voir laquelle décolle le plus !")
     else:
-        print(f"📁 [2/3] Google Drive non configuré, vidéo enregistrée en local : {output_path}")
-        send_macos_notification("TikTok Studio", f"Vidéo prête localement : {fixed_name}")
+        print(f"\n📁 Fichiers enregistrés localement dans : {output_dir}")
+        send_macos_notification("TikTok Studio", f"{len(generated_videos)} variantes prêtes en local.")
 
-    print("=" * 60)
-    print("👀 Retour en veille : déposez une autre vidéo quand vous le souhaitez.\n")
+    print("=" * 65)
+    print("👀 Retour en veille active : glissez une autre vidéo quand vous le souhaitez.\n")
     return {
         "success": True,
-        "input": video_path,
-        "output": output_path,
-        "drive": drive_res,
-        "filename": fixed_name,
+        "variants": generated_videos,
+        "uploaded_count": uploaded_count,
     }
 
 
@@ -145,8 +203,8 @@ def _interactive_test_listener(target_dir: str):
                 break
             demo_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "demo_sample.mp4")
             if os.path.exists(demo_path):
-                dest_demo = os.path.join(target_dir, f"test_demo_{int(time.time())}.mp4")
-                print("\n🧪 [TEST DEMO DÉCLENCHÉ] Copie de la vidéo démo dans le Dossier Magique...")
+                dest_demo = os.path.join(target_dir, f"demo_test_{int(time.time())}.mp4")
+                print("\n🧪 [TEST PACK A/B DÉCLENCHÉ] Traitement de la vidéo démo...")
                 shutil.copy2(demo_path, dest_demo)
             else:
                 print("\n⚠️ Fichier demo_sample.mp4 introuvable.")
@@ -174,14 +232,15 @@ def run_watch_loop(watch_dir: Optional[str] = None, interval_sec: float = 2.0, i
         except Exception:
             pass
 
-    print("=" * 60)
-    print("🚀 DOSSIER MAGIQUE TIKTOK STUDIO (EN VEILLE ACTIVE)")
+    print("=" * 65)
+    print("🚀 DOSSIER MAGIQUE TIKTOK STUDIO (PACK A/B AUTOMATIQUE)")
     print(f"📂 Dossier surveillé : {target_dir}")
-    print("👉 Glissez une vidéo (.mp4 ou .mov) dans ce dossier Finder.")
-    print("💡 Appuyez sur [ENTRÉE] dans ce terminal pour tester avec une démo !")
-    print("=" * 60)
+    print("👉 Glissez une vidéo (.mp4 ou .mov) dans ce dossier.")
+    print("✨ Il génère AUTOMATIQUEMENT la Variante A (14s) ET la Variante B (15s) !")
+    print("💡 Appuyez sur [ENTRÉE] dans ce terminal pour tester immédiatement !")
+    print("=" * 65)
 
-    send_macos_notification("TikTok Studio", "Dossier Magique actif : fenêtre Finder ouverte !")
+    send_macos_notification("TikTok Studio", "Dossier Magique A/B actif : déposez vos vidéos !")
 
     valid_exts = {".mp4", ".mov", ".m4v", ".avi", ".mkv"}
 
@@ -221,7 +280,7 @@ def run_watch_loop(watch_dir: Optional[str] = None, interval_sec: float = 2.0, i
                 loop_count += 1
                 if loop_count % 6 == 0:  # Toutes les ~12 secondes
                     now_str = datetime.now().strftime("%H:%M:%S")
-                    print(f"[{now_str}] ⏳ En veille active : glissez une vidéo dans 'A_CONVERTIR_TIKTOK' (ou tapez Entrée pour tester)...")
+                    print(f"[{now_str}] ⏳ En veille active : glissez une vidéo dans 'A_CONVERTIR_TIKTOK' (ou tapez Entrée)...")
 
             time.sleep(interval_sec)
 
