@@ -648,13 +648,14 @@ with tab_convert:
                 cut_start = st.slider("Commencer l'extrait à :", min_value=0.0, max_value=float(max_s), value=float(trim_seconds), step=0.5, format="%.1f s", key="slider_cut_start")
 
         st.markdown("---")
+        run_full_pack = st.button("⚡ Tout Générer en 1 clic : Vidéo Complète 9:16 + Pack A/B Testing (Recommandé)", key="btn_full_pack", type="primary", use_container_width=True)
         col_act1, col_act2 = st.columns(2)
         with col_act1:
-            run_conv_btn = st.button("🚀 Lancer la conversion TikTok HD", key="btn_run_conversion", use_container_width=True)
+            run_conv_btn = st.button("🎬 Convertir uniquement la vidéo intégrale (9:16)", key="btn_run_conversion", use_container_width=True)
         with col_act2:
-            run_ab_btn = st.button("🧪 Générer Pack A/B Testing (2 variantes 14s & 15s)", key="btn_ab_testing", use_container_width=True)
+            run_ab_btn = st.button("🧪 Générer uniquement le Pack A/B Testing (Variante A & B)", key="btn_ab_testing", use_container_width=True)
 
-        if run_conv_btn:
+        if run_full_pack or run_conv_btn:
             with st.spinner("Conversion en cours avec encodage H.264 certifié TikTok..."):
                 converter = TikTokVideoConverter()
                 output_converted = tempfile.mktemp(suffix="_tiktok_converted.mp4")
@@ -692,7 +693,7 @@ with tab_convert:
             else:
                 st.error(f"Erreur de conversion : {res.get('error')}")
 
-        if run_ab_btn:
+        if run_full_pack or run_ab_btn:
             with st.spinner("Génération des 2 variantes A/B Testing en cours..."):
                 converter = TikTokVideoConverter()
                 ab_dir = tempfile.mkdtemp()
@@ -1410,6 +1411,26 @@ with tab_magic:
             st.code("".join(logs) if logs else "En attente de nouvelles vidéos...", language="text")
         else:
             st.info("Aucune vidéo traitée récemment. Le journal s'affichera dès le premier dépôt.")
+
+        # Affichage des vidéos générées prêtes dans export_tiktok
+        st.markdown("##### 🎬 Vidéos prêtes pour publication (`export_tiktok`) :")
+        exp_dir = os.path.join(watch_path, "export_tiktok")
+        if os.path.exists(exp_dir):
+            video_files = [
+                f for f in sorted(os.listdir(exp_dir), reverse=True)
+                if f.lower().endswith((".mp4", ".mov")) and not f.startswith(".")
+            ]
+            if video_files:
+                for vf in video_files[:6]:
+                    vf_path = os.path.join(exp_dir, vf)
+                    size_mb = os.path.getsize(vf_path) / (1024 * 1024)
+                    icon = "🅰️" if "VARIANTE_A" in vf else ("🅱️" if "VARIANTE_B" in vf else "🎬")
+                    with st.expander(f"{icon} {vf} ({size_mb:.1f} Mo)", expanded=("VARIANTE" in vf)):
+                        st.video(vf_path)
+                        with open(vf_path, "rb") as f_dl:
+                            st.download_button("⬇️ Télécharger ce fichier", f_dl.read(), file_name=vf, key=f"dl_tab6_{vf}", use_container_width=True)
+            else:
+                st.info("Aucune vidéo exportée pour l'instant.")
 
 
 # ==========================================
