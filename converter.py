@@ -6,10 +6,34 @@ découpage de rétention (12-18s) et incrustation d'accroches visuelles.
 """
 
 import os
+import re
 import subprocess
 import tempfile
 from typing import Optional, Dict, Any, Tuple
 import imageio_ffmpeg
+
+
+def get_short_clean_name(name_or_path: str, max_len: int = 12) -> str:
+    """
+    Raccourcit et simplifie un nom de fichier pour les affichages mobiles / iPad / TikTok.
+    - Supprime les timestamps (ex: '20260925_221845_')
+    - Raccourcit les hashs MD5/UUID (ex: '76662164279d45aaa9789967fb57dfb8' -> '76662')
+    - Nettoie les caractères spéciaux pour un nom court et lisible (ex: 'simu_trou_noir')
+    """
+    base = os.path.splitext(os.path.basename(name_or_path))[0]
+    base = re.sub(r'^\d{8}_\d{4,6}_', '', base)
+
+    no_dashes = base.replace("-", "").replace("_", "")
+    is_hex_hash = len(no_dashes) >= 16 and all(c in "0123456789abcdefABCDEF" for c in no_dashes)
+
+    if is_hex_hash:
+        return no_dashes[:5].lower()
+
+    clean = re.sub(r'[^a-zA-Z0-9_-]', '_', base)
+    clean = re.sub(r'_+', '_', clean).strip('_')
+    if len(clean) > max_len:
+        clean = clean[:max_len].rstrip('_')
+    return clean or "video"
 
 
 class TikTokVideoConverter:
@@ -146,15 +170,17 @@ class TikTokVideoConverter:
         total_duration: float = 30.0,
         hook_a: str = "🚀 Regardez bien à la 5e seconde...",
         hook_b: str = "😱 Ce que personne ne vous a dit :",
+        short_name: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Génère automatiquement 2 variantes courtes pour l'A/B testing TikTok :
         - Variante A : 14 secondes du début (Hook immédiat)
         - Variante B : 15 secondes au milieu / pic d'action
+        Noms ultra-courts et lisibles (ex: 76662_A_14s.mp4, 76662_B_15s.mp4).
         """
-        base_name = os.path.splitext(os.path.basename(input_path))[0]
-        out_a = os.path.join(output_dir, f"{base_name}_VARIANTE_A_express14s.mp4")
-        out_b = os.path.join(output_dir, f"{base_name}_VARIANTE_B_action15s.mp4")
+        tag = short_name if short_name else get_short_clean_name(input_path)
+        out_a = os.path.join(output_dir, f"{tag}_A_14s.mp4")
+        out_b = os.path.join(output_dir, f"{tag}_B_15s.mp4")
 
         # Variante A : 0s à 14s
         res_a = self.convert_to_tiktok_format(

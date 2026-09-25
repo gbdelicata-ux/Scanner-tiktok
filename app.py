@@ -15,7 +15,7 @@ import numpy as np
 
 from analyzer import TikTokVideoAnalyzer
 from safe_zone import render_tiktok_overlay
-from converter import TikTokVideoConverter
+from converter import TikTokVideoConverter, get_short_clean_name
 from theme_detector import VideoThemeDetector
 from gdrive_uploader import (
     upload_video_to_gdrive,
@@ -647,6 +647,21 @@ with tab_convert:
                 max_s = max(1.0, orig_duration - 5.0)
                 cut_start = st.slider("Commencer l'extrait à :", min_value=0.0, max_value=float(max_s), value=float(trim_seconds), step=0.5, format="%.1f s", key="slider_cut_start")
 
+        # Identifiant court et lisible pour l'export (compatible mobile / iPad / TikTok)
+        raw_input_name = conv_upload.name if conv_upload else "video"
+        default_tag = get_short_clean_name(raw_input_name)
+        col_tag1, col_tag2 = st.columns([1, 1])
+        with col_tag1:
+            short_tag = st.text_input(
+                "🏷️ Nom court de la vidéo :",
+                value=default_tag,
+                help="Nom concis (ex: 76662, mars) pour que vos variantes restent courtes et faciles à lire sur iPad sans être tronquées.",
+                key="input_short_tag",
+            ).strip() or default_tag
+        with col_tag2:
+            st.caption("📱 Aperçu des noms générés (ultra-lisibles sur iPad & TikTok) :")
+            st.code(f"🅰️ {short_tag}_A_14s.mp4\n🅱️ {short_tag}_B_15s.mp4\n🎬 {short_tag}_FULL.mp4", language="text")
+
         st.markdown("---")
         run_full_pack = st.button("⚡ Tout Générer en 1 clic : Vidéo Complète 9:16 + Pack A/B Testing (Recommandé)", key="btn_full_pack", type="primary", use_container_width=True)
         col_act1, col_act2 = st.columns(2)
@@ -671,9 +686,7 @@ with tab_convert:
                 )
 
             if res["success"]:
-                raw_name = conv_upload.name if conv_upload else "video"
-                base_name, _ = os.path.splitext(raw_name)
-                download_filename = f"{base_name}_corrige.mp4"
+                download_filename = f"{short_tag}_FULL.mp4"
 
                 st.session_state["ready_video_path"] = output_converted
                 st.session_state["ready_video_name"] = download_filename
@@ -704,6 +717,7 @@ with tab_convert:
                     total_duration=orig_duration,
                     hook_a=hook_text or "🚀 Regardez bien jusqu'à la fin...",
                     hook_b="😱 Ce que personne ne vous a dit :",
+                    short_name=short_tag,
                 )
                 st.session_state["tab2_ab_res"] = ab_res
                 st.session_state["tab2_ab_dir"] = ab_dir
@@ -1424,8 +1438,8 @@ with tab_magic:
                 for vf in video_files[:6]:
                     vf_path = os.path.join(exp_dir, vf)
                     size_mb = os.path.getsize(vf_path) / (1024 * 1024)
-                    icon = "🅰️" if "VARIANTE_A" in vf else ("🅱️" if "VARIANTE_B" in vf else "🎬")
-                    with st.expander(f"{icon} {vf} ({size_mb:.1f} Mo)", expanded=("VARIANTE" in vf)):
+                    icon = "🅰️" if ("_A_14s" in vf or "VARIANTE_A" in vf) else ("🅱️" if ("_B_15s" in vf or "VARIANTE_B" in vf) else "🎬")
+                    with st.expander(f"{icon} {vf} ({size_mb:.1f} Mo)", expanded=("_A_14s" in vf or "_B_15s" in vf or "VARIANTE" in vf)):
                         st.video(vf_path)
                         with open(vf_path, "rb") as f_dl:
                             st.download_button("⬇️ Télécharger ce fichier", f_dl.read(), file_name=vf, key=f"dl_tab6_{vf}", use_container_width=True)

@@ -20,7 +20,7 @@ import subprocess
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 
-from converter import TikTokVideoConverter
+from converter import TikTokVideoConverter, get_short_clean_name
 from analyzer import TikTokVideoAnalyzer
 from gdrive_uploader import upload_video_to_gdrive, is_gdrive_configured
 
@@ -97,12 +97,14 @@ def process_single_video(video_path: str, output_dir: str) -> Dict[str, Any]:
     converter = TikTokVideoConverter()
     generated_videos = []
 
+    short_tag = get_short_clean_name(filename)
+
     # ----------------------------------------------------
     # A. VARIANTE A : Express 14s (Taux de complétion maximal)
     # ----------------------------------------------------
-    name_a = f"{base_name}_VARIANTE_A_express14s.mp4"
+    name_a = f"{short_tag}_A_14s.mp4"
     path_a = os.path.join(output_dir, name_a)
-    print(f"   🅰️ Variante A (14s Express - Hook Jaune/Noir)...")
+    print(f"   🅰️ Variante A (14s Express - Hook Jaune/Noir) -> {name_a}...")
     dur_a = 14.0 if duration > 14.0 else None
     res_a = converter.convert_to_tiktok_format(
         input_path=video_path,
@@ -123,9 +125,9 @@ def process_single_video(video_path: str, output_dir: str) -> Dict[str, Any]:
     # ----------------------------------------------------
     # B. VARIANTE B : Action Peak 15s (Milieu / Moment fort)
     # ----------------------------------------------------
-    name_b = f"{base_name}_VARIANTE_B_action15s.mp4"
+    name_b = f"{short_tag}_B_15s.mp4"
     path_b = os.path.join(output_dir, name_b)
-    print(f"   🅱️ Variante B (15s Action Peak - Hook Cyber)...")
+    print(f"   🅱️ Variante B (15s Action Peak - Hook Cyber) -> {name_b}...")
     start_b = max(0.0, (duration / 2.0) - 7.0) if duration > 16.0 else 0.0
     dur_b = 15.0 if duration > 15.0 else None
     res_b = converter.convert_to_tiktok_format(
@@ -147,9 +149,9 @@ def process_single_video(video_path: str, output_dir: str) -> Dict[str, Any]:
     # ----------------------------------------------------
     # C. VERSION COMPLÈTE (Intégrale sans découpe)
     # ----------------------------------------------------
-    name_c = f"{base_name}_COMPLET_9x16.mp4"
+    name_c = f"{short_tag}_FULL.mp4"
     path_c = os.path.join(output_dir, name_c)
-    print(f"   🎬 Version Complète 9:16...")
+    print(f"   🎬 Version Complète 9:16 -> {name_c}...")
     res_c = converter.convert_to_tiktok_format(
         input_path=video_path,
         output_path=path_c,
