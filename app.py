@@ -937,15 +937,18 @@ with tab_batch:
             col_m3.metric("⚠️ À Corriger", nb_problematic)
 
             st.markdown("### 🎯 Choix du mode de sélection")
+            # Choix par défaut intelligent : si aucune vidéo n'est non-conforme (toutes 9:16), on sélectionne "all" par défaut
+            default_filter_idx = 0 if nb_problematic > 0 else 2
+
             filter_mode = st.radio(
                 "Quelles vidéos souhaitez-vous modifier ?",
                 options=[
                     ("auto_problematic", f"🪄 Modifier UNIQUEMENT les vidéos non conformes ({nb_problematic} vidéo(s) ciblée(s))"),
-                    ("custom", "✍️ Sélection personnalisée (cocher manuellement)"),
-                    ("all", f"🔄 Tout modifier (forcer la conversion des {len(inspected_files)} vidéos)"),
+                    ("custom", "✍️ Sélection personnalisée (cocher manuellement ci-dessous)"),
+                    ("all", f"🔄 Tout modifier (traiter et ré-encoder les {len(inspected_files)} vidéos du lot)"),
                 ],
                 format_func=lambda x: x[1],
-                index=0,
+                index=default_filter_idx,
                 key="filter_mode_radio",
             )[0]
 
@@ -954,13 +957,10 @@ with tab_batch:
             for i, it in enumerate(inspected_files):
                 if filter_mode == "auto_problematic":
                     default_checked = it["needs_fix"]
-                    is_disabled = True
                 elif filter_mode == "all":
                     default_checked = True
-                    is_disabled = True
                 else:  # custom
                     default_checked = it["needs_fix"]
-                    is_disabled = False
 
                 col_c1, col_c2 = st.columns([1, 14])
                 with col_c1:
@@ -968,7 +968,7 @@ with tab_batch:
                         f"Sélectionner {it['name']}",
                         value=default_checked,
                         key=f"chk_vid_{i}_{it['name']}",
-                        disabled=is_disabled,
+                        disabled=False,
                         label_visibility="collapsed",
                     )
                 with col_c2:
@@ -976,12 +976,12 @@ with tab_batch:
                     if it["needs_fix"]:
                         st.markdown(
                             f"🛑 **{it['name']}** ➔ {theme_badge} | `{it['issue_label']}` ({it['duration']}s) "
-                            f"{'➔ **Sélectionnée pour correction**' if checked else '*(Non cochée)*'}"
+                            f"{'➔ **Sélectionnée pour correction**' if checked else '*(Décochée)*'}"
                         )
                     else:
                         st.markdown(
                             f"✅ **{it['name']}** ➔ {theme_badge} | `{it['issue_label']}` ({it['duration']}s) "
-                            f"{'➔ *Préservée sans modification*' if not checked else '➔ **Forcée pour ré-encodage**'}"
+                            f"{'➔ **Sélectionnée pour ré-encodage HD**' if checked else '*(Préservée sans modification)*'}"
                         )
 
                 if checked:
@@ -1030,78 +1030,87 @@ with tab_batch:
                     help="Dès qu'une vidéo est convertie, elle est envoyée directement dans votre dossier Google Drive sans aucune action manuelle.",
                 )
 
+            run_batch_now = False
             if len(selected_indices) == 0:
-                st.warning("ℹ️ Aucune vidéo n'est sélectionnée pour la conversion (toutes vos vidéos sont déjà conformes ou décochées).")
+                st.info("💡 Vos vidéos sont déjà au format vertical. Pour les ré-encoder, couper le silence d'intro ou les déposer sur Drive en lot, cliquez ci-dessous :")
+                if st.button(f"🔄 Tout sélectionner et traiter les {len(inspected_files)} vidéo(s)", key="btn_force_all_batch", type="primary", use_container_width=True):
+                    selected_indices = list(range(len(inspected_files)))
+                    run_batch_now = True
             else:
                 btn_convert_label = f"⚡ Lancer la correction des {len(selected_indices)} vidéo(s) sélectionnée(s)"
-                if st.button(btn_convert_label, key="btn_start_batch_convert"):
-                    progress_bar = st.progress(0, text="Démarrage du traitement par lot...")
-                    converter = TikTokVideoConverter()
-                    converted_files = []
-                    theme_counters = {}
+                if st.button(btn_convert_label, key="btn_start_batch_convert", type="primary", use_container_width=True):
+                    run_batch_now = True
 
-                    total_to_process = len(selected_indices)
-                    for step_idx, orig_idx in enumerate(selected_indices):
-                        item = inspected_files[orig_idx]
-                        file = item["file"]
-                        pct = int((step_idx / total_to_process) * 100)
-                        progress_bar.progress(pct, text=f"Correction de la vidéo {step_idx + 1}/{total_to_process} : {file.name} [{item['theme_label']}]...")
+            if run_batch_now and selected_indices:
+                progress_bar = st.progress(0, text="Démarrage du traitement par lot...")
+                converter = TikTokVideoConverter()
+                converted_files = []
+                theme_counters = {}
 
-                        file.seek(0)
-                        _, f_ext = os.path.splitext(file.name)
-                        f_ext = f_ext.lower() if f_ext in [".mp4", ".mov", ".m4v"] else ".mp4"
-                        temp_in = tempfile.NamedTemporaryFile(delete=False, suffix=f_ext)
-                        temp_in.write(file.read())
-                        temp_in.close()
+                total_to_process = len(selected_indices)
+                for step_idx, orig_idx in enumerate(selected_indices):
+                    item = inspected_files[orig_idx]
+                    file = item["file"]
+                    pct = int((step_idx / total_to_process) * 100)
+                    progress_bar.progress(pct, text=f"Correction de la vidéo {step_idx + 1}/{total_to_process} : {file.name} [{item['theme_label']}]...")
 
-                        temp_out = tempfile.mktemp(suffix="_batch_fixed.mp4")
+                    file.seek(0)
+                    _, f_ext = os.path.splitext(file.name)
+                    f_ext = f_ext.lower() if f_ext in [".mp4", ".mov", ".m4v"] else ".mp4"
+                    temp_in = tempfile.NamedTemporaryFile(delete=False, suffix=f_ext)
+                    temp_in.write(file.read())
+                    temp_in.close()
 
-                        res = converter.convert_to_tiktok_format(
-                            input_path=temp_in.name,
-                            output_path=temp_out,
-                            mode=batch_style,
-                            trim_start_sec=batch_trim,
-                        )
+                    temp_out_f = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
+                    temp_out = temp_out_f.name
+                    temp_out_f.close()
 
-                        base_name, _ = os.path.splitext(file.name)
-                        tag = get_short_clean_name(base_name)
-                        slug = item["slug"]
-                        theme_counters[slug] = theme_counters.get(slug, 0) + 1
-                        num = theme_counters[slug]
+                    res = converter.convert_to_tiktok_format(
+                        input_path=temp_in.name,
+                        output_path=temp_out,
+                        mode=batch_style,
+                        trim_start_sec=batch_trim,
+                    )
 
-                        if batch_naming == "thematic":
-                            fixed_name = f"{slug}_{num:02d}_FULL.mp4"
-                        elif batch_naming == "prefixed":
-                            fixed_name = f"{slug}_{tag}_FULL.mp4"
-                        else:
-                            fixed_name = f"{tag}_FULL.mp4"
+                    base_name, _ = os.path.splitext(file.name)
+                    tag = get_short_clean_name(base_name)
+                    slug = item["slug"]
+                    theme_counters[slug] = theme_counters.get(slug, 0) + 1
+                    num = theme_counters[slug]
 
-                        if res["success"] and os.path.exists(temp_out):
-                            with open(temp_out, "rb") as f_out:
-                                data = f_out.read()
+                    if batch_naming == "thematic":
+                        fixed_name = f"{slug}_{num:02d}_FULL.mp4"
+                    elif batch_naming == "prefixed":
+                        fixed_name = f"{slug}_{tag}_FULL.mp4"
+                    else:
+                        fixed_name = f"{tag}_FULL.mp4"
 
-                            # Téléversement direct Google Drive si activé
-                            drive_info = None
-                            if auto_drive_batch:
-                                progress_bar.progress(pct, text=f"☁️ Dépôt dans Google Drive (AIvidéo) : {fixed_name}...")
-                                drive_res = upload_video_to_gdrive(
-                                    local_file_path=temp_out,
-                                    destination_filename=fixed_name,
-                                )
-                                drive_info = drive_res
+                    if res["success"] and os.path.exists(temp_out):
+                        with open(temp_out, "rb") as f_out:
+                            data = f_out.read()
 
-                            converted_files.append((fixed_name, data, res["file_size_mb"], item["theme_label"], drive_info))
-                            try:
-                                os.remove(temp_out)
-                            except Exception:
-                                pass
-                        else:
-                            st.error(f"❌ Échec pour {file.name} : {res.get('error', 'Erreur inconnue')}")
+                        # Téléversement direct Google Drive si activé
+                        drive_info = None
+                        if auto_drive_batch:
+                            progress_bar.progress(pct, text=f"☁️ Dépôt dans Google Drive (AIvidéo) : {fixed_name}...")
+                            drive_res = upload_video_to_gdrive(
+                                local_file_path=temp_out,
+                                destination_filename=fixed_name,
+                            )
+                            drive_info = drive_res
 
+                        converted_files.append((fixed_name, data, res["file_size_mb"], item["theme_label"], drive_info))
                         try:
-                            os.remove(temp_in.name)
+                            os.remove(temp_out)
                         except Exception:
                             pass
+                    else:
+                        st.error(f"❌ Échec pour {file.name} : {res.get('error', 'Erreur inconnue')}")
+
+                    try:
+                        os.remove(temp_in.name)
+                    except Exception:
+                        pass
 
                     progress_bar.progress(100, text="Traitement terminé !")
 
