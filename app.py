@@ -129,17 +129,44 @@ st.sidebar.link_button(
     use_container_width=True,
 )
 
-with st.sidebar.expander("⚙️ Configuration Dépôt Direct 100% Auto"):
+with st.sidebar.expander("⚙️ Configuration Dépôt Direct (Format TOML / iPad)"):
     st.markdown(
         """
-        Pour que l'application dépose les vidéos **directement dans AIvidéo sans action manuelle** :
-        - **Option 1 (Recommandée sur Mac)** : Lancez dans le Terminal :
-          `python3 connect_gdrive.py`
-        - **Option 2** : Déposez ci-dessous votre fichier `credentials.json` ou `service_account.json` :
+        **Pour Streamlit Cloud (iPad & Web) :**
+        Dans le tableau de bord Streamlit Cloud (*Settings > Secrets*), collez votre configuration au format **TOML** :
+        """
+    )
+    # Lecture dynamique du fichier local sans exposer les clés en dur dans le code source git
+    local_toml_text = ""
+    for sec_file in [".streamlit/secrets.toml", "secrets.toml"]:
+        if os.path.exists(sec_file):
+            try:
+                with open(sec_file, "r", encoding="utf-8") as f_sec:
+                    local_toml_text = f_sec.read()
+                break
+            except Exception:
+                pass
+
+    if not local_toml_text:
+        local_toml_text = """[gdrive_oauth]
+client_id = "VOTRE_CLIENT_ID.apps.googleusercontent.com"
+client_secret = "VOTRE_CLIENT_SECRET"
+refresh_token = "VOTRE_REFRESH_TOKEN"
+token_uri = "https://oauth2.googleapis.com/token"
+"""
+    st.code(local_toml_text, language="toml")
+    st.caption("ℹ️ Ce format TOML remplace le fichier JSON et active l'envoi direct depuis n'importe quel navigateur (iPad, Chrome, Safari).")
+
+    st.markdown("---")
+    st.markdown(
+        """
+        **Pour votre Mac local :**
+        Le fichier `.streamlit/secrets.toml` et le token sont déjà configurés ! Si besoin de renouveler :
+        - Lancez dans le Terminal : `python3 connect_gdrive.py`
         """
     )
     up_cred = st.file_uploader(
-        "Clé JSON Google Cloud :",
+        "Ou déposez un nouveau fichier JSON Google Cloud :",
         type=["json"],
         key="gdrive_json_key_uploader",
     )
@@ -301,50 +328,63 @@ with tab_scan:
 
                             st.session_state["ready_video_path"] = out_fixed
                             st.session_state["ready_video_name"] = download_filename
-                            st.success(f"Vidéo convertie avec succès en {res['resolution']} ({res['file_size_mb']} Mo) !")
+                            st.session_state["tab1_fixed_path"] = out_fixed
+                            st.session_state["tab1_fixed_name"] = download_filename
+                            st.session_state["tab1_fixed_res"] = res
 
                             # Envoi automatique vers Google Drive si coché
                             if auto_drive_tab1:
                                 with st.spinner("☁️ Dépôt direct dans votre dossier Google Drive (AIvidéo)..."):
                                     up_res = upload_video_to_gdrive(out_fixed, destination_filename=download_filename)
                                     if up_res.get("success"):
-                                        st.success("🎉 **Vidéo déposée automatiquement dans votre Google Drive AIvidéo !**")
-                                        drive_view_link = up_res.get("web_link", GOOGLE_DRIVE_FOLDER_URL)
-                                        st.link_button("📂 Voir la vidéo dans Google Drive", drive_view_link, use_container_width=True)
+                                        st.session_state["tab1_drive_url"] = up_res.get("web_link", GOOGLE_DRIVE_FOLDER_URL)
+                                        st.session_state["tab1_drive_status"] = "auto_success"
                                     else:
-                                        st.warning(f"⚠️ Info Google Drive : {up_res.get('error')}")
-
-                            col_dl_fix1, col_dl_fix2 = st.columns(2)
-                            with col_dl_fix1:
-                                with open(out_fixed, "rb") as f:
-                                    st.download_button(
-                                        label=f"⬇️ Enregistrer sur cet appareil",
-                                        data=f.read(),
-                                        file_name=download_filename,
-                                        mime="video/mp4",
-                                        key="dl_btn_fixed",
-                                        use_container_width=True,
-                                    )
-                            with col_dl_fix2:
-                                if st.button(
-                                    "☁️ Déposer MAINTENANT dans Google Drive",
-                                    key="btn_upload_drive_tab1",
-                                    use_container_width=True,
-                                ):
-                                    with st.spinner("Téléversement vers Google Drive (AIvidéo)..."):
-                                        man_res = upload_video_to_gdrive(out_fixed, destination_filename=download_filename)
-                                        if man_res.get("success"):
-                                            st.session_state["tab1_drive_url"] = man_res.get("web_link", GOOGLE_DRIVE_FOLDER_URL)
-                                            st.success(f"🎉 Vidéo « {download_filename} » déposée dans Google Drive !")
-                                        else:
-                                            st.error(f"Erreur d'envoi : {man_res.get('error')}")
-
-                            if st.session_state.get("tab1_drive_url"):
-                                st.link_button("📂 Voir la vidéo dans mon Google Drive", st.session_state["tab1_drive_url"], use_container_width=True)
-                            else:
-                                st.link_button("📂 Ouvrir le dossier AIvidéo sur Google Drive", GOOGLE_DRIVE_FOLDER_URL, use_container_width=True)
+                                        st.session_state["tab1_drive_status"] = f"warning: {up_res.get('error')}"
                         else:
                             st.error(f"Erreur lors de la conversion : {res.get('error')}")
+
+                if st.session_state.get("tab1_fixed_path") and os.path.exists(st.session_state["tab1_fixed_path"]):
+                    out_fixed = st.session_state["tab1_fixed_path"]
+                    download_filename = st.session_state["tab1_fixed_name"]
+                    res = st.session_state.get("tab1_fixed_res", {})
+                    st.success(f"Vidéo convertie avec succès en {res.get('resolution', '1080x1920')} ({res.get('file_size_mb', '')} Mo) !")
+
+                    if st.session_state.get("tab1_drive_status") == "auto_success":
+                        st.success("🎉 **Vidéo déposée automatiquement dans votre Google Drive AIvidéo !**")
+                    elif str(st.session_state.get("tab1_drive_status", "")).startswith("warning:"):
+                        st.warning(f"⚠️ Info Google Drive : {st.session_state['tab1_drive_status']}")
+
+                    col_dl_fix1, col_dl_fix2 = st.columns(2)
+                    with col_dl_fix1:
+                        with open(out_fixed, "rb") as f:
+                            st.download_button(
+                                label=f"⬇️ Enregistrer sur cet appareil",
+                                data=f.read(),
+                                file_name=download_filename,
+                                mime="video/mp4",
+                                key="dl_btn_fixed",
+                                use_container_width=True,
+                            )
+                    with col_dl_fix2:
+                        if st.button(
+                            "☁️ Déposer MAINTENANT dans Google Drive",
+                            key="btn_upload_drive_tab1",
+                            use_container_width=True,
+                        ):
+                            with st.spinner("Téléversement vers Google Drive (AIvidéo)..."):
+                                man_res = upload_video_to_gdrive(out_fixed, destination_filename=download_filename)
+                                if man_res.get("success"):
+                                    st.session_state["tab1_drive_url"] = man_res.get("web_link", GOOGLE_DRIVE_FOLDER_URL)
+                                    st.session_state["tab1_drive_status"] = "auto_success"
+                                    st.success(f"🎉 Vidéo « {download_filename} » déposée dans Google Drive !")
+                                else:
+                                    st.error(f"Erreur d'envoi : {man_res.get('error')}")
+
+                    if st.session_state.get("tab1_drive_url"):
+                        st.link_button("📂 Voir la vidéo dans mon Google Drive", st.session_state["tab1_drive_url"], use_container_width=True)
+                    else:
+                        st.link_button("📂 Ouvrir le dossier AIvidéo sur Google Drive", GOOGLE_DRIVE_FOLDER_URL, use_container_width=True)
             else:
                 st.markdown(
                     """
@@ -536,58 +576,71 @@ with tab_convert:
 
                 st.session_state["ready_video_path"] = output_converted
                 st.session_state["ready_video_name"] = download_filename
-                st.success(f"🎉 Vidéo convertie en {res['resolution']} ! Taille : {res['file_size_mb']} Mo")
+                st.session_state["tab2_output_path"] = output_converted
+                st.session_state["tab2_download_filename"] = download_filename
+                st.session_state["tab2_res"] = res
 
                 # Téléversement direct dans Google Drive si activé
                 if auto_drive_tab2:
                     with st.spinner("☁️ Dépôt direct dans votre dossier Google Drive (AIvidéo)..."):
                         up_res = upload_video_to_gdrive(output_converted, destination_filename=download_filename)
                         if up_res.get("success"):
-                            st.success("🎉 **Vidéo déposée automatiquement dans votre dossier Google Drive AIvidéo !**")
-                            drive_view_link = up_res.get("web_link", GOOGLE_DRIVE_FOLDER_URL)
-                            st.link_button("📂 Voir la vidéo dans Google Drive", drive_view_link, use_container_width=True)
+                            st.session_state["tab2_drive_url"] = up_res.get("web_link", GOOGLE_DRIVE_FOLDER_URL)
+                            st.session_state["tab2_drive_status"] = "auto_success"
                         else:
-                            st.warning(f"⚠️ Info Google Drive : {up_res.get('error')}")
-
-                col_res_v, col_res_d = st.columns([1, 1])
-                with col_res_v:
-                    st.video(output_converted)
-                with col_res_d:
-                    st.markdown("#### 📱 Prête à publier")
-                    st.write("La vidéo est désormais parfaitement calibrée pour les smartphones et l'algorithme.")
-                    with open(output_converted, "rb") as f:
-                        st.download_button(
-                            label=f"⬇️ Télécharger « {download_filename} »",
-                            data=f.read(),
-                            file_name=download_filename,
-                            mime="video/mp4",
-                            key="btn_download_final",
-                            use_container_width=True,
-                        )
-                    if st.button(
-                        "☁️ Déposer MAINTENANT dans Google Drive (AIvidéo)",
-                        key="btn_upload_drive_tab2",
-                        use_container_width=True,
-                    ):
-                        with st.spinner("Téléversement direct vers Google Drive (AIvidéo)..."):
-                            man_res = upload_video_to_gdrive(output_converted, destination_filename=download_filename)
-                            if man_res.get("success"):
-                                st.session_state["tab2_drive_url"] = man_res.get("web_link", GOOGLE_DRIVE_FOLDER_URL)
-                                st.success(f"🎉 Vidéo « {download_filename} » déposée dans Google Drive !")
-                            else:
-                                st.error(f"Erreur d'envoi : {man_res.get('error')}")
-
-                    if st.session_state.get("tab2_drive_url"):
-                        st.link_button("📂 Voir la vidéo dans mon Google Drive", st.session_state["tab2_drive_url"], use_container_width=True)
-                    else:
-                        st.link_button(
-                            "📂 Ouvrir le dossier AIvidéo sur Google Drive",
-                            GOOGLE_DRIVE_FOLDER_URL,
-                            use_container_width=True,
-                        )
-                    st.info("👉 Rendez-vous dans l'onglet **'🚀 Envoyer & Publier'** pour lancer TikTok !")
+                            st.session_state["tab2_drive_status"] = f"warning: {up_res.get('error')}"
             else:
                 st.error(f"Erreur de conversion : {res.get('error')}")
+
+        if st.session_state.get("tab2_output_path") and os.path.exists(st.session_state["tab2_output_path"]):
+            output_converted = st.session_state["tab2_output_path"]
+            download_filename = st.session_state["tab2_download_filename"]
+            res = st.session_state.get("tab2_res", {})
+            st.success(f"🎉 Vidéo convertie en {res.get('resolution', '1080x1920')} ! Taille : {res.get('file_size_mb', '')} Mo")
+
+            if st.session_state.get("tab2_drive_status") == "auto_success":
+                st.success("🎉 **Vidéo déposée automatiquement dans votre dossier Google Drive AIvidéo !**")
+            elif str(st.session_state.get("tab2_drive_status", "")).startswith("warning:"):
+                st.warning(f"⚠️ Info Google Drive : {st.session_state['tab2_drive_status']}")
+
+            col_res_v, col_res_d = st.columns([1, 1])
+            with col_res_v:
+                st.video(output_converted)
+            with col_res_d:
+                st.markdown("#### 📱 Prête à publier")
+                st.write("La vidéo est désormais parfaitement calibrée pour les smartphones et l'algorithme.")
+                with open(output_converted, "rb") as f:
+                    st.download_button(
+                        label=f"⬇️ Télécharger « {download_filename} »",
+                        data=f.read(),
+                        file_name=download_filename,
+                        mime="video/mp4",
+                        key="btn_download_final",
+                        use_container_width=True,
+                    )
+                if st.button(
+                    "☁️ Déposer MAINTENANT dans Google Drive (AIvidéo)",
+                    key="btn_upload_drive_tab2",
+                    use_container_width=True,
+                ):
+                    with st.spinner("Téléversement direct vers Google Drive (AIvidéo)..."):
+                        man_res = upload_video_to_gdrive(output_converted, destination_filename=download_filename)
+                        if man_res.get("success"):
+                            st.session_state["tab2_drive_url"] = man_res.get("web_link", GOOGLE_DRIVE_FOLDER_URL)
+                            st.session_state["tab2_drive_status"] = "auto_success"
+                            st.success(f"🎉 Vidéo « {download_filename} » déposée dans Google Drive !")
+                        else:
+                            st.error(f"Erreur d'envoi : {man_res.get('error')}")
+
+                if st.session_state.get("tab2_drive_url"):
+                    st.link_button("📂 Voir la vidéo dans mon Google Drive", st.session_state["tab2_drive_url"], use_container_width=True)
+                else:
+                    st.link_button(
+                        "📂 Ouvrir le dossier AIvidéo sur Google Drive",
+                        GOOGLE_DRIVE_FOLDER_URL,
+                        use_container_width=True,
+                    )
+                st.info("👉 Rendez-vous dans l'onglet **'🚀 Envoyer & Publier'** pour lancer TikTok !")
 
 
 # ==========================================

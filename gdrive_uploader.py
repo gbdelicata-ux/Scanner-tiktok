@@ -48,6 +48,17 @@ def get_gdrive_config() -> Tuple[Optional[str], Optional[Any]]:
                     return "secrets_oauth", st.secrets["gdrive_oauth"]
                 if "gcp_service_account" in st.secrets:
                     return "secrets_service_account", st.secrets["gcp_service_account"]
+                # Format alternatif : clés à la racine
+                if "refresh_token" in st.secrets and "client_id" in st.secrets:
+                    return "secrets_oauth", st.secrets
+                # Format alternatif : JSON collé en chaîne brute
+                if "gdrive_token_json" in st.secrets:
+                    import json
+                    try:
+                        raw = json.loads(st.secrets["gdrive_token_json"])
+                        return "json_oauth_data", raw
+                    except Exception:
+                        pass
         except Exception:
             pass
 
@@ -129,13 +140,20 @@ def build_drive_service():
         from google.oauth2.credentials import Credentials
         from google.auth.transport.requests import Request
 
-        if method == "secrets_oauth":
+        if method in ("secrets_oauth", "json_oauth_data"):
+            cfg = dict(config)
+            r_token = str(cfg.get("refresh_token", "")).strip().strip('"').strip("'")
+            c_id = str(cfg.get("client_id", "")).strip().strip('"').strip("'")
+            c_sec = str(cfg.get("client_secret", "")).strip().strip('"').strip("'")
+            t_uri = str(cfg.get("token_uri", "https://oauth2.googleapis.com/token")).strip().strip('"').strip("'")
+            tok = str(cfg.get("token", "")).strip().strip('"').strip("'") or None
+
             creds = Credentials(
-                token=None,
-                refresh_token=config["refresh_token"],
-                token_uri=config.get("token_uri", "https://oauth2.googleapis.com/token"),
-                client_id=config["client_id"],
-                client_secret=config["client_secret"],
+                token=tok,
+                refresh_token=r_token,
+                token_uri=t_uri,
+                client_id=c_id,
+                client_secret=c_sec,
                 scopes=SCOPES,
             )
             creds.refresh(Request())
