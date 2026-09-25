@@ -23,6 +23,21 @@ from gdrive_uploader import (
     DEFAULT_FOLDER_ID,
     DEFAULT_FOLDER_URL,
 )
+from hook_generator import (
+    HOOK_STYLES,
+    HOOK_PRESETS,
+    create_hook_banner_image,
+    preview_hook_on_frame,
+)
+from cover_generator import (
+    extract_best_cover_frames,
+    create_cover_with_sticker,
+)
+from caption_generator import (
+    NICHE_PRESETS,
+    generate_captions,
+)
+import magic_folder
 
 st.set_page_config(
     page_title="TikTok Scanner, Convertisseur & Publication",
@@ -201,10 +216,13 @@ with col_head2:
     )
 
 # Onglets principaux
-tab_scan, tab_convert, tab_batch, tab_publish = st.tabs([
+tab_scan, tab_convert, tab_batch, tab_covers, tab_captions, tab_magic, tab_publish = st.tabs([
     "📊 Scanner & Audit TikTok",
-    "🪄 Convertisseur 9:16",
+    "🎯 Studio 9:16 & Accroches",
     "⚡ Mode Rafale (Multi-Vidéos)",
+    "🖼️ Vignettes & Covers HD",
+    "💡 Titres & Hashtags FYP",
+    "📂 Dossier Magique (Mac Auto)",
     "🚀 Envoyer & Publier",
 ])
 
@@ -526,9 +544,11 @@ with tab_convert:
         orig_fps = round(cap.get(cv2.CAP_PROP_FPS) or 30.0, 1)
         cap.release()
 
-        st.info(f"📁 Fichier d'origine détecté : **{orig_w}x{orig_h}** ({orig_fps} FPS)")
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        orig_duration = round(total_frames / orig_fps, 1) if orig_fps > 0 else 30.0
+        st.info(f"📁 Fichier d'origine détecté : **{orig_w}x{orig_h}** ({orig_fps} FPS - {orig_duration}s)")
 
-        st.markdown("### 🎛️ Options de conversion")
+        st.markdown("### 🎛️ 1. Cadrage vertical & Audio")
         col_opt1, col_opt2 = st.columns(2)
 
         with col_opt1:
@@ -545,7 +565,7 @@ with tab_convert:
 
         with col_opt2:
             trim_seconds = st.slider(
-                "Couper le début de la vidéo (pour supprimer un silence ou temps mort) :",
+                "Couper le début de la vidéo (suppression du silence d'intro) :",
                 min_value=0.0,
                 max_value=3.0,
                 value=0.0,
@@ -558,7 +578,83 @@ with tab_convert:
                 key="chk_auto_drive_tab2",
             )
 
-        if st.button("⚡ Lancer la conversion TikTok HD", key="btn_run_conversion"):
+        # ----------------------------------------------------
+        # 2. Accroche Visuelle ("Hook 0-2s")
+        # ----------------------------------------------------
+        st.markdown("---")
+        st.markdown("### 🎯 2. Accroche Visuelle (« Hook 0-2s » - Anti-Zap)")
+        enable_hook = st.checkbox(
+            "⚡ Incruster une accroche visuelle dans les premières secondes (Recommandé pour percer le plafond des 800 vues)",
+            value=True,
+            key="chk_enable_hook",
+        )
+        hook_text = ""
+        hook_style = "yellow_impact"
+        hook_duration = 2.0
+        if enable_hook:
+            col_hk1, col_hk2 = st.columns([2, 1])
+            with col_hk1:
+                hook_preset_cat = st.selectbox(
+                    "Thématique de l'accroche :",
+                    options=[
+                        ("espace_cgi", "🪐 Espace, Fusées & Simulations CGI"),
+                        ("facecam_conseil", "🎙️ Facecam, Secrets & Conseils"),
+                        ("curiosite_generale", "😱 Choc & Grande Curiosité"),
+                        ("custom", "✍️ Rédiger mon propre texte personnalisé"),
+                    ],
+                    format_func=lambda x: x[1],
+                    key="sel_hook_cat",
+                )[0]
+                if hook_preset_cat == "custom":
+                    hook_text = st.text_input("Votre texte d'accroche (max 60 caractères) :", value="Que se passe-t-il si vous ratez ce détail ?", key="txt_hook_custom")
+                else:
+                    hook_text = st.selectbox("Sélectionnez l'accroche prête à l'emploi :", options=HOOK_PRESETS[hook_preset_cat], key="sel_hook_preset")
+            with col_hk2:
+                hook_style = st.selectbox(
+                    "Style graphique :",
+                    options=list(HOOK_STYLES.keys()),
+                    format_func=lambda k: HOOK_STYLES[k]["name"],
+                    key="sel_hook_style",
+                )
+                hook_duration = st.slider("Durée d'affichage :", min_value=1.5, max_value=4.0, value=2.0, step=0.5, format="%.1f s", key="slider_hook_dur")
+
+        # ----------------------------------------------------
+        # 3. Découpeur de Rétention (12-18s)
+        # ----------------------------------------------------
+        st.markdown("---")
+        st.markdown("### ✂️ 3. Découpeur de Rétention (Format Optimal 12-18s TikTok)")
+        enable_retention = st.checkbox("✂️ Activer le découpage court (Maximise le taux de complétion pour la FYP)", value=False, key="chk_retention")
+        cut_duration = None
+        cut_start = trim_seconds
+        if enable_retention:
+            col_ret1, col_ret2 = st.columns(2)
+            with col_ret1:
+                retention_preset = st.radio(
+                    "Format de rétention :",
+                    options=[
+                        (14.0, "⚡ Format Express (14s) - Taux de complétion maximal"),
+                        (18.0, "🔥 Format Standard (18s) - Bon équilibre action/contexte"),
+                        ("custom", "✂️ Durée personnalisée"),
+                    ],
+                    format_func=lambda x: x[1],
+                    key="radio_retention",
+                )[0]
+                if retention_preset == "custom":
+                    cut_duration = st.slider("Durée de l'extrait :", min_value=5.0, max_value=30.0, value=15.0, step=1.0, format="%.0f s", key="slider_custom_cut")
+                else:
+                    cut_duration = float(retention_preset)
+            with col_ret2:
+                max_s = max(1.0, orig_duration - 5.0)
+                cut_start = st.slider("Commencer l'extrait à :", min_value=0.0, max_value=float(max_s), value=float(trim_seconds), step=0.5, format="%.1f s", key="slider_cut_start")
+
+        st.markdown("---")
+        col_act1, col_act2 = st.columns(2)
+        with col_act1:
+            run_conv_btn = st.button("🚀 Lancer la conversion TikTok HD", key="btn_run_conversion", use_container_width=True)
+        with col_act2:
+            run_ab_btn = st.button("🧪 Générer Pack A/B Testing (2 variantes 14s & 15s)", key="btn_ab_testing", use_container_width=True)
+
+        if run_conv_btn:
             with st.spinner("Conversion en cours avec encodage H.264 certifié TikTok..."):
                 converter = TikTokVideoConverter()
                 output_converted = tempfile.mktemp(suffix="_tiktok_converted.mp4")
@@ -566,7 +662,11 @@ with tab_convert:
                     input_path=conv_input_path,
                     output_path=output_converted,
                     mode=selected_mode,
-                    trim_start_sec=trim_seconds,
+                    trim_start_sec=cut_start,
+                    duration_sec=cut_duration,
+                    hook_text=hook_text if enable_hook else None,
+                    hook_style=hook_style,
+                    hook_duration=hook_duration,
                 )
 
             if res["success"]:
@@ -591,6 +691,46 @@ with tab_convert:
                             st.session_state["tab2_drive_status"] = f"warning: {up_res.get('error')}"
             else:
                 st.error(f"Erreur de conversion : {res.get('error')}")
+
+        if run_ab_btn:
+            with st.spinner("Génération des 2 variantes A/B Testing en cours..."):
+                converter = TikTokVideoConverter()
+                ab_dir = tempfile.mkdtemp()
+                ab_res = converter.generate_ab_variants(
+                    input_path=conv_input_path,
+                    output_dir=ab_dir,
+                    mode=selected_mode,
+                    total_duration=orig_duration,
+                    hook_a=hook_text or "🚀 Regardez bien jusqu'à la fin...",
+                    hook_b="😱 Ce que personne ne vous a dit :",
+                )
+                st.session_state["tab2_ab_res"] = ab_res
+                st.session_state["tab2_ab_dir"] = ab_dir
+
+        if st.session_state.get("tab2_ab_res"):
+            ab_dict = st.session_state["tab2_ab_res"]
+            st.success("🎉 **Pack A/B Testing généré avec succès !**")
+            col_ab1, col_ab2 = st.columns(2)
+            with col_ab1:
+                st.markdown("#### 🅰️ Variante A (Express 14s)")
+                va = ab_dict.get("variant_a", {})
+                if va.get("success"):
+                    st.video(va["output_path"])
+                    with open(va["output_path"], "rb") as f_a:
+                        st.download_button("⬇️ Télécharger Variante A", f_a.read(), file_name=os.path.basename(va["output_path"]), mime="video/mp4", key="dl_va", use_container_width=True)
+                    if st.button("☁️ Déposer Variante A sur Drive", key="btn_drv_va", use_container_width=True):
+                        upload_video_to_gdrive(va["output_path"], destination_filename=os.path.basename(va["output_path"]))
+                        st.success("Variante A envoyée sur Drive !")
+            with col_ab2:
+                st.markdown("#### 🅱️ Variante B (Action 15s)")
+                vb = ab_dict.get("variant_b", {})
+                if vb.get("success"):
+                    st.video(vb["output_path"])
+                    with open(vb["output_path"], "rb") as f_b:
+                        st.download_button("⬇️ Télécharger Variante B", f_b.read(), file_name=os.path.basename(vb["output_path"]), mime="video/mp4", key="dl_vb", use_container_width=True)
+                    if st.button("☁️ Déposer Variante B sur Drive", key="btn_drv_vb", use_container_width=True):
+                        upload_video_to_gdrive(vb["output_path"], destination_filename=os.path.basename(vb["output_path"]))
+                        st.success("Variante B envoyée sur Drive !")
 
         if st.session_state.get("tab2_output_path") and os.path.exists(st.session_state["tab2_output_path"]):
             output_converted = st.session_state["tab2_output_path"]
@@ -1059,7 +1199,186 @@ with tab_batch:
 
 
 # ==========================================
-# ONGLET 4 : ENVOYER & PUBLIER SUR TIKTOK
+# ONGLET 4 : VIGNETTES & COVERS HD
+# ==========================================
+with tab_covers:
+    st.title("🖼️ Générateur Automatique de Vignettes (Cover Frames HD)")
+    st.write(
+        "L'algorithme de TikTok et vos spectateurs jugent votre vidéo sur la première image visible dans la grille. "
+        "Cet outil analyse votre vidéo, extrait automatiquement les moments au plus fort contraste/netteté "
+        "et génère une miniature 9:16 percutante avec titre de couverture."
+    )
+
+    cover_source_path = st.session_state.get("ready_video_path")
+    cov_file = st.file_uploader(
+        "Choisissez une vidéo (ou utilisez celle déjà chargée dans le Studio) :",
+        type=["mp4", "mov"],
+        key="uploader_covers",
+    )
+    if cov_file:
+        tmp_cov = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
+        tmp_cov.write(cov_file.read())
+        tmp_cov.close()
+        cover_source_path = tmp_cov.name
+
+    if cover_source_path and os.path.exists(cover_source_path):
+        st.success(f"🎬 Vidéo source prête pour extraction : `{os.path.basename(cover_source_path)}`")
+
+        col_cov_act1, col_cov_act2 = st.columns([1, 1])
+        with col_cov_act1:
+            if st.button("🔍 Extraire les meilleures frames spectaculaires", key="btn_scan_covers", use_container_width=True):
+                with st.spinner("Analyse du contraste et de la netteté en cours..."):
+                    frames = extract_best_cover_frames(cover_source_path, max_candidates=12, top_k=4)
+                    st.session_state["extracted_cover_frames"] = frames
+
+        if st.session_state.get("extracted_cover_frames"):
+            frames = st.session_state["extracted_cover_frames"]
+            st.markdown("### 🏆 Top Frames Détectées (Classées par intensité visuelle)")
+            cols_f = st.columns(len(frames))
+            for i, f_data in enumerate(frames):
+                with cols_f[i]:
+                    st.image(f_data["frame_rgb"], caption=f_data["label"], use_container_width=True)
+                    if st.button(f"Choisir #{i+1}", key=f"btn_pick_frame_{i}", use_container_width=True):
+                        st.session_state["selected_cover_frame"] = f_data["frame_rgb"]
+
+            selected_frame = st.session_state.get("selected_cover_frame", frames[0]["frame_rgb"])
+
+            st.markdown("---")
+            st.markdown("### 🎨 Personnaliser le Sticker de Couverture")
+            col_stk1, col_stk2 = st.columns(2)
+            with col_stk1:
+                cover_title = st.text_input("Titre principal de la miniature :", value="COLLISION SPATIALE", key="txt_cov_title")
+                cover_badge = st.text_input("Petit badge supérieur :", value="SIMULATION 3D", key="txt_cov_badge")
+            with col_stk2:
+                cover_style = st.selectbox("Style du sticker :", options=[("neon", "🔥 Néon TikTok (Rose/Blanc/Noir)"), ("gold", "⚡ Or Impact (Jaune/Noir)")], format_func=lambda x: x[1], key="sel_cov_style")[0]
+
+            final_cover_rgb = create_cover_with_sticker(selected_frame, title_text=cover_title, badge_text=cover_badge, style=cover_style)
+            st.image(final_cover_rgb, caption="Aperçu final de votre vignette TikTok 9:16", width=420)
+
+            # Exportation image
+            cover_pil = Image.fromarray(final_cover_rgb)
+            img_buf = io.BytesIO()
+            cover_pil.save(img_buf, format="JPEG", quality=95)
+            img_bytes = img_buf.getvalue()
+
+            col_cov_dl1, col_cov_dl2 = st.columns(2)
+            with col_cov_dl1:
+                st.download_button(
+                    label="⬇️ Télécharger la vignette HD (.jpg)",
+                    data=img_bytes,
+                    file_name="vignette_tiktok_hd.jpg",
+                    mime="image/jpeg",
+                    key="btn_dl_cover_jpg",
+                    use_container_width=True,
+                )
+            with col_cov_dl2:
+                if st.button("☁️ Déposer la vignette dans Google Drive (AIvidéo)", key="btn_drv_cover", use_container_width=True):
+                    tmp_cov_f = tempfile.mktemp(suffix="_vignette.jpg")
+                    with open(tmp_cov_f, "wb") as f:
+                        f.write(img_bytes)
+                    up_cov_res = upload_video_to_gdrive(tmp_cov_f, destination_filename="vignette_tiktok_hd.jpg")
+                    if up_cov_res.get("success"):
+                        st.success("🎉 Vignette déposée avec succès dans votre Google Drive AIvidéo !")
+                    else:
+                        st.error(f"Erreur Drive : {up_cov_res.get('error')}")
+    else:
+        st.info("💡 Chargez une vidéo dans l'onglet **Scanner** ou **Studio 9:16**, ou déposez-en une ici pour extraire ses vignettes.")
+
+
+# ==========================================
+# ONGLET 5 : TITRES, SCRIPTS & HASHTAGS FYP
+# ==========================================
+with tab_captions:
+    st.title("💡 Assistant Titres, Légendes & Hashtags FYP")
+    st.write(
+        "Une description bien calibrée et les bons hashtags augmentent l'indexation de votre vidéo par le moteur de recherche TikTok. "
+        "Générez ici des propositions prêtes à copier-coller en 1 clic."
+    )
+
+    col_cp1, col_cp2 = st.columns([1, 1])
+    with col_cp1:
+        niche_selected = st.selectbox(
+            "Thématique de votre vidéo :",
+            options=list(NICHE_PRESETS.keys()),
+            format_func=lambda k: NICHE_PRESETS[k]["name"],
+            key="sel_niche_caption",
+        )
+    with col_cp2:
+        keywords_input = st.text_input(
+            "Mots-clés ou sujet spécifique (ex: fusée Starship, trou noir, collision) :",
+            value="Astéroïde et collision avec la Terre",
+            key="txt_keywords_caption",
+        )
+
+    captions_list = generate_captions(niche_selected, keywords_input)
+
+    st.markdown("### 📝 Propositions optimisées pour l'engagement :")
+    for idx, item in enumerate(captions_list):
+        with st.expander(f"📌 {item['title']}", expanded=(idx == 0)):
+            st.text_area(
+                "Texte de description à copier :",
+                value=item["caption"],
+                height=130,
+                key=f"area_cap_{idx}",
+            )
+            st.caption(f"🏷️ Hashtags ciblés : `{item['hashtags']}`")
+
+
+# ==========================================
+# ONGLET 6 : DOSSIER MAGIQUE (MAC 100% AUTO)
+# ==========================================
+with tab_magic:
+    st.title("📂 Dossier Magique Mac (Zéro Clic 100% Automatisé)")
+    st.write(
+        "Le workflow ultime pour gagner du temps : déposez simplement vos fichiers vidéo dans un dossier sur votre Mac, "
+        "et ils seront automatiquement convertis en 9:16 HD, nettoyés du silence d'intro et déposés dans votre Google Drive **AIvidéo** !"
+    )
+
+    col_m1, col_m2 = st.columns(2)
+    with col_m1:
+        st.markdown(
+            """
+            <div style='background: rgba(37, 244, 238, 0.08); border: 1px solid #25f4ee; border-radius: 10px; padding: 16px;'>
+                <h4 style='color: #25f4ee; margin-top: 0;'>⚡ Comment ça fonctionne ?</h4>
+                <ol style='padding-left: 20px; line-height: 1.8;'>
+                    <li>Déposez vos rendus 3D/CGI ou vidéos dans le dossier <code>A_CONVERTIR_TIKTOK</code>.</li>
+                    <li>Le script en arrière-plan détecte le fichier dès la fin de l'écriture.</li>
+                    <li>Il coupe le silence, recadre au format 9:16 HD avec fond flou dynamique.</li>
+                    <li>Il téléverse la vidéo directement dans votre Google Drive <strong>AIvidéo</strong>.</li>
+                    <li>Une notification système apparaît sur votre Mac : <em>"Prêt pour l'iPad !"</em></li>
+                </ol>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    with col_m2:
+        st.markdown("#### 🚀 Lancer le Dossier Magique")
+        watch_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "A_CONVERTIR_TIKTOK")
+        os.makedirs(watch_path, exist_ok=True)
+        st.code(f"Dossier surveillé :\n{watch_path}", language="bash")
+
+        import platform
+        if platform.system() == "Darwin":
+            if st.button("📂 Ouvrir le dossier A_CONVERTIR_TIKTOK dans le Finder", key="btn_open_magic_finder", use_container_width=True):
+                subprocess.run(["open", watch_path])
+                st.toast("Dossier ouvert dans le Finder !")
+
+        st.markdown("##### 🖥️ Lancement en 1 double-clic :")
+        st.write("Un fichier exécutable **`lancer_dossier_magique.command`** est disponible dans votre dossier. Double-cliquez dessus depuis votre Finder pour lancer la surveillance en tâche de fond !")
+
+        # Affichage du journal d'activité
+        st.markdown("##### 📜 Journal d'activité récent :")
+        log_p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "magic_folder.log")
+        if os.path.exists(log_p):
+            with open(log_p, "r", encoding="utf-8") as f_log:
+                logs = f_log.readlines()[-8:]
+            st.code("".join(logs) if logs else "En attente de nouvelles vidéos...", language="text")
+        else:
+            st.info("Aucune vidéo traitée récemment. Le journal s'affichera dès le premier dépôt.")
+
+
+# ==========================================
+# ONGLET 7 : ENVOYER & PUBLIER SUR TIKTOK
 # ==========================================
 with tab_publish:
     st.title("🚀 Envoyer & Publier sur TikTok")

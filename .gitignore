@@ -12,3 +12,5 @@ service_account.json
 credentials.json
 token.json
 client_secrets.json
+*.log
+A_CONVERTIR_TIKTOK/
