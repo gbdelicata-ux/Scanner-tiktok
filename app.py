@@ -859,6 +859,17 @@ with tab_batch:
         horizontal=True,
     )[0]
 
+    st.markdown(
+        """
+        <div style='background: rgba(0, 242, 254, 0.08); border-left: 4px solid #00f2fe; padding: 12px 16px; border-radius: 8px; margin-bottom: 12px;'>
+            <strong>💡 Comment charger vos 3 vidéos sur Mac :</strong><br/>
+            • <strong>Méthode 1 (Glisser-Déposer - Le plus simple) :</strong> Sélectionnez vos 3 vidéos dans le Finder et <strong>glissez-les ensemble</strong> dans le cadre ci-dessous.<br/>
+            • <strong>Méthode 2 (Parcourir) :</strong> Cliquez sur <em>Browse files</em>, puis dans la fenêtre Finder, maintenez la touche <strong>Commande (⌘)</strong> enfoncée pendant que vous cliquez sur vos 3 vidéos pour les sélectionner toutes les 3.
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
     uploaded_batch = st.file_uploader(
         "Sélectionnez vos vidéos (vous pouvez en choisir jusqu'à 10 ou plus) :",
         type=["mp4", "mov", "m4v", "MP4", "MOV", "M4V"],
@@ -935,64 +946,27 @@ with tab_batch:
                 })
 
             nb_compliant = sum(1 for it in inspected_files if not it["needs_fix"])
-            nb_problematic = sum(1 for it in inspected_files if it["needs_fix"])
+            # Tableau de bord du lot
+            col_m1, col_m2 = st.columns(2)
+            col_m1.metric("📦 Vidéos Chargées dans ce lot", f"{len(inspected_files)} vidéo(s)")
+            col_m2.metric("⚡ Sélectionnées pour Traitement", f"{len(inspected_files)} sur {len(inspected_files)} (100% sélectionnées)")
 
-            # Tableau de bord du tri automatique
-            col_m1, col_m2, col_m3 = st.columns(3)
-            col_m1.metric("Total Vidéos", len(inspected_files))
-            col_m2.metric("✅ Déjà Conformes TikTok", nb_compliant)
-            col_m3.metric("⚠️ À Corriger", nb_problematic)
+            st.markdown(f"### 📋 {len(inspected_files)} Vidéo(s) prêtes pour le traitement en rafale :")
 
-            # Gestion de l'état de sélection (Toutes cochées par défaut)
-            batch_files_token = "_".join([f"{it['name']}_{it['w']}x{it['h']}" for it in inspected_files])
-            if st.session_state.get("last_batch_token") != batch_files_token:
-                st.session_state["last_batch_token"] = batch_files_token
-                for idx_i in range(len(inspected_files)):
-                    st.session_state[f"batch_sel_{idx_i}"] = True
+            selected_indices = list(range(len(inspected_files)))
 
-            st.markdown("### 📋 Vidéos du lot (Toutes sélectionnées par défaut) :")
-
-            col_sel_a, col_sel_b = st.columns(2)
-            with col_sel_a:
-                if st.button(f"🔄 Tout sélectionner ({len(inspected_files)})", key="btn_sel_all_vids", use_container_width=True):
-                    for idx_i in range(len(inspected_files)):
-                        st.session_state[f"batch_sel_{idx_i}"] = True
-                    st.rerun()
-            with col_sel_b:
-                if nb_problematic > 0 and st.button(f"⚠️ Uniquement celles à recadrer ({nb_problematic})", key="btn_sel_prob_vids", use_container_width=True):
-                    for idx_i, it_prob in enumerate(inspected_files):
-                        st.session_state[f"batch_sel_{idx_i}"] = it_prob["needs_fix"]
-                    st.rerun()
-
-            selected_indices = []
             for i, it in enumerate(inspected_files):
-                col_c1, col_c2 = st.columns([1, 14])
-                with col_c1:
-                    checked = st.checkbox(
-                        f"Sélectionner {it['name']}",
-                        value=st.session_state.get(f"batch_sel_{i}", True),
-                        key=f"batch_sel_{i}",
-                        disabled=False,
-                        label_visibility="collapsed",
+                theme_badge = f"🏷️ **{it['theme_label']}**"
+                if it["needs_fix"]:
+                    st.markdown(
+                        f"🎬 **{it['name']}** ➔ {theme_badge} | ⚠️ `{it['issue_label']}` ({it['duration']}s) "
+                        f"➔ **Recadrage 9:16 HD automatique**"
                     )
-                with col_c2:
-                    theme_badge = f"🏷️ **{it['theme_label']}**"
-                    if it["needs_fix"]:
-                        st.markdown(
-                            f"🛑 **{it['name']}** ➔ {theme_badge} | `{it['issue_label']}` ({it['duration']}s) "
-                            f"{'➔ **Cochée pour recadrage 9:16 HD**' if checked else '*(Décochée)*'}"
-                        )
-                    else:
-                        st.markdown(
-                            f"✅ **{it['name']}** ➔ {theme_badge} | `{it['issue_label']}` ({it['duration']}s) "
-                            f"{'➔ **Cochée pour ré-encodage TikTok certifié + Audio propre**' if checked else '*(Décochée)*'}"
-                        )
-
-                if checked:
-                    selected_indices.append(i)
-
-            if selected_indices:
-                st.info(f"✨ **{len(selected_indices)} sur {len(inspected_files)} vidéo(s) sélectionnée(s)** pour le traitement.")
+                else:
+                    st.markdown(
+                        f"🎬 **{it['name']}** ➔ {theme_badge} | ✅ `{it['issue_label']}` ({it['duration']}s) "
+                        f"➔ **Ré-encodage TikTok certifié + Audio propre**"
+                    )
 
             st.markdown("---")
             st.markdown("### 🎛️ Paramètres & Nommage thématique")
@@ -1038,15 +1012,9 @@ with tab_batch:
                 )
 
             run_batch_now = False
-            if len(selected_indices) == 0:
-                st.info("💡 Vos vidéos sont déjà au format vertical. Pour les ré-encoder, couper le silence d'intro ou les déposer sur Drive en lot, cliquez ci-dessous :")
-                if st.button(f"🔄 Tout sélectionner et traiter les {len(inspected_files)} vidéo(s)", key="btn_force_all_batch", type="primary", use_container_width=True):
-                    selected_indices = list(range(len(inspected_files)))
-                    run_batch_now = True
-            else:
-                btn_convert_label = f"⚡ Lancer la correction des {len(selected_indices)} vidéo(s) sélectionnée(s)"
-                if st.button(btn_convert_label, key="btn_start_batch_convert", type="primary", use_container_width=True):
-                    run_batch_now = True
+            btn_convert_label = f"⚡ Lancer le traitement des {len(inspected_files)} vidéo(s) en rafale"
+            if st.button(btn_convert_label, key="btn_start_batch_convert", type="primary", use_container_width=True):
+                run_batch_now = True
 
             if run_batch_now and selected_indices:
                 progress_bar = st.progress(0, text="Démarrage du traitement par lot...")
