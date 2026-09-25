@@ -163,10 +163,14 @@ def run_watch_loop(watch_dir: Optional[str] = None, interval_sec: float = 2.0, i
     os.makedirs(processed_dir, exist_ok=True)
     os.makedirs(export_dir, exist_ok=True)
 
-    # Ouvrir le dossier dans le Finder si macOS
+    # Ouvrir et activer la fenêtre du dossier dans le Finder si macOS
     if sys.platform == "darwin":
         try:
-            subprocess.run(["open", target_dir], check=False)
+            subprocess.run([
+                "osascript",
+                "-e", 'tell application "Finder" to activate',
+                "-e", f'tell application "Finder" to open POSIX file "{target_dir}"',
+            ], check=False)
         except Exception:
             pass
 
