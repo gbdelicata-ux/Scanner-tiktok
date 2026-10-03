@@ -22,7 +22,8 @@ from typing import Optional, List, Dict, Any
 
 from converter import TikTokVideoConverter, get_short_clean_name
 from analyzer import TikTokVideoAnalyzer
-from gdrive_uploader import upload_video_to_gdrive, is_gdrive_configured
+def is_gdrive_configured(): return False, ""
+def upload_video_to_gdrive(*args, **kwargs): return {"success": False, "error": "Google Drive integration removed."}
 
 # Configuration par défaut du dossier
 DEFAULT_WATCH_DIR = os.path.expanduser("~/Movies/A_CONVERTIR_TIKTOK")
